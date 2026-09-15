@@ -1,0 +1,152 @@
+/* Window & General Layout */
+QMainWindow {
+    background-color: #B7CCC7;
+}
+
+#NavBar {
+    background-color: #0E5436;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#NavLogo {
+    color: #F8FAFC;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+#BottomBar {
+    background-color: #B7CCC7;
+}
+
+#SloganText {
+    font-size: 20px;
+    color: #0E5436;
+}
+
+/* Form Container Card */
+#RegisterCard {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+}
+
+#FormTitle {
+    font-size: 22px;
+    font-weight: bold;
+    color: #0E5436;
+}
+
+#FormSubtitle {
+    font-size: 13px;
+    color: #64748B;
+}
+
+#FieldLabel {
+    font-size: 12px;
+    font-weight: bold;
+    color: #475569;
+    margin-top: 2px;
+}
+
+/* Form Inputs */
+QLineEdit, QDateEdit, QComboBox {
+    background-color: #F8FAFC;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 14px;
+    color: #1E293B;
+}
+
+/* Reserve extra space on right so typed text doesn't slide under the toggle icon */
+QLineEdit {
+    padding-right: 32px;
+}
+
+QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
+    border: 2px solid #0E5436;
+    background-color: #FFFFFF;
+}
+
+/* Inline Action Icons (Password Toggle Eye) */
+QLineEdit QToolButton {
+    border: none;
+    background: transparent;
+    padding: 0px 6px;
+    color: #64748B;
+}
+
+QLineEdit QToolButton:hover {
+    color: #0E5436;
+}
+
+/* Dropdown styling for QComboBox */
+QComboBox::drop-down {
+    border: none;
+    padding-right: 10px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    color: #1E293B;
+    selection-background-color: #0E5436;
+    selection-color: #FFFFFF;
+}
+
+/* Date Picker Popup Styling */
+QCalendarWidget QWidget {
+    background-color: #FFFFFF;
+    color: #1E293B;
+}
+
+QCalendarWidget QAbstractItemView:enabled {
+    color: #1E293B;
+    selection-background-color: #0E5436;
+    selection-color: #FFFFFF;
+}
+
+/* Push Buttons */
+QPushButton {
+    background-color: transparent;
+    color: #F8FAFC;
+    border: none;
+    padding: 8px 16px;
+    font-size: 14px;
+    border-radius: 6px;
+}
+
+QPushButton:hover {
+    background-color: #B7CCC7;
+}
+
+QPushButton::menu-indicator {
+    image: none;
+    width: 0px;
+}
+
+/* Specific Action Buttons */
+#PrimaryBtn {
+    background-color: #0E5436;
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 10px;
+    border: none;
+}
+
+#PrimaryBtn:hover {
+    background-color: #126843;
+}
+
+#SecondaryBtn {
+    background-color: transparent;
+    color: #64748B;
+    border: none;
+    font-size: 13px;
+}
+
+#SecondaryBtn:hover {
+    color: #0E5436;
+}
