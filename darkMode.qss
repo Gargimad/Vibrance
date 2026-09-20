@@ -7,7 +7,9 @@ QMainWindow {
     background-color: #062E1E;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-
+QLabel {
+    color: #F8FAFC;
+}
 #NavLogo {
     color: #F8FAFC;
     font-size: 18px;

@@ -26,10 +26,12 @@ QMainWindow {
 /* Form Container Card */
 #RegisterCard {
     background-color: #FFFFFF;
-    border: 1px solid #E2E8F0;
+    border: 1px solid #CBD5E1;
     border-radius: 12px;
 }
-
+#PasswordInput {
+    padding-right: 32px;
+}
 #FormTitle {
     font-size: 22px;
     font-weight: bold;
@@ -56,11 +58,6 @@ QLineEdit, QDateEdit, QComboBox {
     padding: 10px 14px;
     font-size: 14px;
     color: #1E293B;
-}
-
-/* Reserve extra space on right so typed text doesn't slide under the toggle icon */
-QLineEdit {
-    padding-right: 32px;
 }
 
 QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
@@ -101,6 +98,7 @@ QCalendarWidget QWidget {
 }
 
 QCalendarWidget QAbstractItemView:enabled {
+    background-color: white;
     color: #1E293B;
     selection-background-color: #0E5436;
     selection-color: #FFFFFF;
