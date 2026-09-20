@@ -2,13 +2,11 @@ import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton, QStackedWidget, QVBoxLayout, QWidget
-)
+    QApplication, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
 from orgRegister import OrganizationRegistration
 from volunteerRegister import VolunteerRegistration
 from volunteerLogin import VolunteerLogin
-from volunteerHome import VolunteerHome  # <--- Import new widget
 
 
 class Landing(QMainWindow):
@@ -20,7 +18,6 @@ class Landing(QMainWindow):
         self.resize(900, 600)
 
         self.is_dark_mode = False
-        self.current_user = None  # Track active login session
 
         # Main layout container
         mainWid = QWidget()
@@ -44,9 +41,8 @@ class Landing(QMainWindow):
         btnAbout = QPushButton("About")
         btnFeatures = QPushButton("Features")
         btnDemo = QPushButton("Demo")
-        
-        self.btnLogin = QPushButton("Login")
-        self.btnLogin.clicked.connect(self.handle_login_nav_click)
+        btnLogin = QPushButton("Login")
+        btnLogin.clicked.connect(self.show_login_volunteer_page)
 
         self.btnConnect = QPushButton("Register ▾ ")
         self.btnConnect.setObjectName("NavDropdown")
@@ -75,10 +71,10 @@ class Landing(QMainWindow):
         navLayout.addWidget(btnDemo)
         navLayout.addWidget(self.btnConnect)
         self.btnConnect.setMenu(connectMenu)
-        navLayout.addWidget(self.btnLogin)
+        navLayout.addWidget(btnLogin)
         navLayout.addWidget(self.btnThemeToggle)
 
-        # HERO SECTION (Guest Home Page)
+        # HERO SECTION
         heroWidget = QWidget()
         heroWidget.setObjectName("HeroSection")
         
@@ -113,9 +109,9 @@ class Landing(QMainWindow):
 
         bottomLayout.addWidget(sloganLabel)
 
-        # Home Page Container (Guest)
-        self.guestHomePage = QWidget()
-        homeLayout = QVBoxLayout(self.guestHomePage)
+        # Home Page Container
+        self.homePage = QWidget()
+        homeLayout = QVBoxLayout(self.homePage)
         homeLayout.setContentsMargins(0, 0, 0, 0)
         homeLayout.setSpacing(0)
 
@@ -130,22 +126,15 @@ class Landing(QMainWindow):
             on_back_click=self.show_home_page
         )
         self.volunteerLoginPage = VolunteerLogin(
-            on_login_success=self.handle_login_success,
-            on_back_click=self.show_home_page
-        )
-        # Volunteer Authenticated Dashboard Page
-        self.volunteerHomePage = VolunteerHome(
-            on_logout_click=self.handle_logout
+            on_login_success=self.show_home_page
         )
 
         # Central View Container (Stack)
         self.pageStack = QStackedWidget()
-        self.pageStack.addWidget(self.guestHomePage)          # Index 0
-        self.pageStack.addWidget(self.volunteerPage)         # Index 1
-        self.pageStack.addWidget(self.orgPage)               # Index 2
-        self.pageStack.addWidget(self.volunteerLoginPage)    # Index 3
-        self.pageStack.addWidget(self.volunteerHomePage)     # Index 4
-
+        self.pageStack.addWidget(self.homePage)
+        self.pageStack.addWidget(self.volunteerPage)
+        self.pageStack.addWidget(self.orgPage)
+        self.pageStack.addWidget(self.volunteerLoginPage)
         mainLayout.addWidget(navWid, 0)
         mainLayout.addWidget(self.pageStack, 1)
 
@@ -153,34 +142,12 @@ class Landing(QMainWindow):
         self.apply_theme("lightMode.qss")
         self.update_logos()
 
-    # --- Session & Navigation Logic ---
-    def handle_login_success(self, user_data):
-        """Callback when user completes verification in VolunteerLogin."""
-        self.current_user = user_data
-        self.volunteerHomePage.set_user_data(user_data)
-        self.btnLogin.setText("Dashboard")
-        self.btnConnect.setVisible(False)  # Hide registration dropdown when logged in
-        self.pageStack.setCurrentWidget(self.volunteerHomePage)
-
-    def handle_logout(self):
-        """Logs user out and reverts to guest view."""
-        self.current_user = None
-        self.btnLogin.setText("Login")
-        self.btnConnect.setVisible(True)
-        self.pageStack.setCurrentWidget(self.guestHomePage)
-
-    def handle_login_nav_click(self):
-        """Nav bar login button routes to Dashboard if logged in, else Login form."""
-        if self.current_user:
-            self.pageStack.setCurrentWidget(self.volunteerHomePage)
-        else:
-            self.pageStack.setCurrentWidget(self.volunteerLoginPage)
-
+    # --- Page Switcher Slots ---
     def show_home_page(self):
-        if self.current_user:
-            self.pageStack.setCurrentWidget(self.volunteerHomePage)
-        else:
-            self.pageStack.setCurrentWidget(self.guestHomePage)
+        self.pageStack.setCurrentWidget(self.homePage)
+
+    def show_login_volunteer_page(self):
+        self.pageStack.setCurrentWidget(self.volunteerLoginPage)
 
     def show_volunteer_page(self):
         self.pageStack.setCurrentWidget(self.volunteerPage)
@@ -189,12 +156,17 @@ class Landing(QMainWindow):
         self.pageStack.setCurrentWidget(self.orgPage)
 
     def update_logos(self):
+        """Updates logo images based on current mode."""
+        # Light mode uses dark logo; Dark mode uses light logo
         logo_filename = "logoFullLight.png" if self.is_dark_mode else "logoFullDark.png"
+        
         smooth_transform = Qt.TransformationMode.SmoothTransformation
 
+        # Nav Logo (height 32px)
         nav_pixmap = QPixmap(logo_filename).scaledToHeight(32, smooth_transform)
         self.nav_logo.setPixmap(nav_pixmap)
 
+        # Hero Logo (height 300px)
         hero_pixmap = QPixmap(logo_filename).scaledToHeight(500, smooth_transform)
         self.hero_logo.setPixmap(hero_pixmap)
 

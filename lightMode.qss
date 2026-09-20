@@ -1,68 +1,121 @@
+/* ==========================================================================
+   MOXIE BRAND PALETTE — LIGHT MODE
+   (QSS has no variables, so use Find & Replace on these hex values to retheme)
+
+   Design rule: NO rounded corners anywhere. Every border-radius is 0.
+
+   Brand core
+   --------------------------------------------------------------------------
+   Blush Beige (bg)        #D8CBC7   window + bottom bar background
+   Moxie Purple (brand)    #2D1A3E   nav bar, titles, primary button
+   Purple Hover            #47305C   primary button hover
+   Blueberry (accent)      #3D4BA8   card top rule, focus rings, hover accents
+
+   Surfaces & borders
+   --------------------------------------------------------------------------
+   Card Surface            #F5F0EE   register card, popups, dropdown lists
+   Input Surface           #FBF8F7   input background (unfocused)
+   Border                  #BFAFB3   card + input borders
+   Nav Border              rgba(216, 203, 199, 0.15)
+
+   Text
+   --------------------------------------------------------------------------
+   Text on Dark (nav)      #F5F0EE   text/icons on the purple nav bar
+   Text Primary            #2D1A3E   input text, body text
+   Text Label              #4E3C5C   field labels
+   Text Muted              #7A6A86   subtitles, icons, secondary button
+
+   Interaction
+   --------------------------------------------------------------------------
+   Selection BG            #2D1A3E
+   Selection Text          #F5F0EE
+   Nav Hover BG            rgba(216, 203, 199, 0.15)
+   ========================================================================== */
+
 /* Window & General Layout */
 QMainWindow {
-    background-color: #B7CCC7;
+    background-color: #D8CBC7;
 }
 
 #NavBar {
-    background-color: #0E5436;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: #c1aea8;
+    border-bottom: 1px solid rgba(216, 203, 199, 0.15);
+    color: #2D1A3E;
 }
 
 #NavLogo {
-    color: #F8FAFC;
+    color: #F5F0EE;
     font-size: 18px;
     font-weight: bold;
 }
+#HeroLogo {
+    font-size: 50px;
+}
 
 #BottomBar {
-    background-color: #B7CCC7;
+    background-color: #D8CBC7;
 }
 
 #SloganText {
     font-size: 20px;
-    color: #0E5436;
+    color: #2D1A3E;
 }
 
-/* Form Container Card */
+/* Form Container Card — square, with a Blueberry rule across the top */
 #RegisterCard {
-    background-color: #FFFFFF;
-    border: 1px solid #CBD5E1;
-    border-radius: 12px;
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-top: 4px solid #3D4BA8;
+    border-radius: 0px;
 }
 #PasswordInput {
     padding-right: 32px;
 }
 #FormTitle {
-    font-size: 22px;
+    font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
+    font-size: 30px;
     font-weight: bold;
-    color: #0E5436;
+    color: #2D1A3E;
 }
 
 #FormSubtitle {
-    font-size: 13px;
-    color: #64748B;
+    font-size: 14px;
+    color: #7A6A86;
 }
 
 #FieldLabel {
     font-size: 12px;
     font-weight: bold;
-    color: #475569;
+    color: #4E3C5C;
     margin-top: 2px;
 }
 
 /* Form Inputs */
 QLineEdit, QDateEdit, QComboBox {
-    background-color: #F8FAFC;
-    border: 1px solid #CBD5E1;
-    border-radius: 6px;
-    padding: 10px 14px;
+    background-color: #FBF8F7;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+    padding: 11px 14px;
     font-size: 14px;
-    color: #1E293B;
+    color: #2D1A3E;
+    selection-background-color: #2D1A3E;
+    selection-color: #F5F0EE;
 }
 
+/* Focus: thicker border, padding reduced by 1px so nothing shifts */
 QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
-    border: 2px solid #0E5436;
+    border: 2px solid #3D4BA8;
+    padding: 10px 13px;
     background-color: #FFFFFF;
+}
+
+/* One-time code field on the verification step */
+#OtpInput {
+    font-size: 26px;
+    padding: 14px;
+}
+#OtpInput:focus {
+    padding: 13px;
 }
 
 /* Inline Action Icons (Password Toggle Eye) */
@@ -70,11 +123,11 @@ QLineEdit QToolButton {
     border: none;
     background: transparent;
     padding: 0px 6px;
-    color: #64748B;
+    color: #7A6A86;
 }
 
 QLineEdit QToolButton:hover {
-    color: #0E5436;
+    color: #3D4BA8;
 }
 
 /* Dropdown styling for QComboBox */
@@ -84,38 +137,59 @@ QComboBox::drop-down {
 }
 
 QComboBox QAbstractItemView {
-    background-color: #FFFFFF;
-    border: 1px solid #CBD5E1;
-    color: #1E293B;
-    selection-background-color: #0E5436;
-    selection-color: #FFFFFF;
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+    color: #2D1A3E;
+    selection-background-color: #2D1A3E;
+    selection-color: #F5F0EE;
 }
 
 /* Date Picker Popup Styling */
 QCalendarWidget QWidget {
-    background-color: #FFFFFF;
-    color: #1E293B;
+    background-color: #F5F0EE;
+    color: #2D1A3E;
 }
 
 QCalendarWidget QAbstractItemView:enabled {
-    background-color: white;
-    color: #1E293B;
-    selection-background-color: #0E5436;
-    selection-color: #FFFFFF;
+    background-color: #FBF8F7;
+    selection-background-color: #2D1A3E;
+    selection-color: #F5F0EE;
+}
+
+/* CAPTCHA */
+#CaptchaImage {
+    background-color: #FBF8F7;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+}
+
+#CaptchaRefreshBtn {
+    background-color: #FBF8F7;
+    color: #2D1A3E;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+    padding: 0px;
+    font-size: 16px;
+}
+
+#CaptchaRefreshBtn:hover {
+    background-color: #FFFFFF;
+    border: 1px solid #3D4BA8;
 }
 
 /* Push Buttons */
 QPushButton {
     background-color: transparent;
-    color: #F8FAFC;
+    color: #F5F0EE;
     border: none;
     padding: 8px 16px;
     font-size: 14px;
-    border-radius: 6px;
+    border-radius: 0px;
 }
 
 QPushButton:hover {
-    background-color: #B7CCC7;
+    background-color: rgba(216, 203, 199, 0.15);
 }
 
 QPushButton::menu-indicator {
@@ -125,26 +199,100 @@ QPushButton::menu-indicator {
 
 /* Specific Action Buttons */
 #PrimaryBtn {
-    background-color: #0E5436;
-    color: #FFFFFF;
+    background-color: #2D1A3E;
+    color: #F5F0EE;
     font-size: 14px;
     font-weight: bold;
-    border-radius: 6px;
-    padding: 10px;
+    border-radius: 0px;
+    padding: 14px;
     border: none;
 }
 
 #PrimaryBtn:hover {
-    background-color: #126843;
+    background-color: #47305C;
 }
 
 #SecondaryBtn {
     background-color: transparent;
-    color: #64748B;
+    color: #7A6A86;
     border: none;
     font-size: 13px;
 }
 
 #SecondaryBtn:hover {
-    color: #0E5436;
+    background-color: transparent;
+    color: #3D4BA8;
+}
+
+QMenu {
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+    color: #2D1A3E;
+}
+
+QMenu::item {
+    padding: 8px 20px;
+    background-color: transparent;
+}
+
+QMenu::item:selected {
+    background-color: #2D1A3E;
+    color: #F5F0EE;
+}
+
+/* Scroll bars — slim and square */
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #7A6A86;
+    min-height: 32px;
+    border-radius: 0px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #2D1A3E;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 0px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #7A6A86;
+    min-width: 32px;
+    border-radius: 0px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #2D1A3E;
+}
+
+QScrollBar::add-line, QScrollBar::sub-line {
+    width: 0px;
+    height: 0px;
+}
+
+QScrollBar::add-page, QScrollBar::sub-page {
+    background: none;
+}
+#NavBar QPushButton {
+    color: #2D1A3E;
+}
+
+#NavBar QPushButton:hover {
+    background-color: rgba(45, 26, 62, 0.10);
+}
+/* Registration page backdrop — matches the landing page */
+#RegisterScroll,
+#RegisterScroll > QWidget#qt_scrollarea_viewport,
+#RegisterScrollContent {
+    background-color: #D8CBC7;
+    border: none;
 }

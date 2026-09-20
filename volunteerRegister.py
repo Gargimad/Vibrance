@@ -8,9 +8,9 @@ from email.mime.multipart import MIMEMultipart
 
 from PyQt6.QtGui import QAction, QPixmap
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QFrame, QDateEdit, QComboBox,
-    QScrollArea, QMessageBox, QStackedWidget
+    QScrollArea, QMessageBox, QStackedWidget, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QDate, QByteArray
 from captcha.image import ImageCaptcha
@@ -18,11 +18,20 @@ from db import Database
 
 
 def send_otp_email(recipient_email: str, otp_code: str) -> bool:
-    """Sends a 6-digit verification OTP to the user's email address."""
+    """Sends a 6-digit verification OTP to the user's email address.
+
+    Credentials come from environment variables so they never live in source:
+        MOXIE_SMTP_USER      (optional, defaults to the sender address below)
+        MOXIE_SMTP_PASSWORD  (a Gmail App Password)
+    """
     smtp_server = "smtp.gmail.com"
     smtp_port = 587
-    sender_email = "gargimadala17@gmail.com"
-    sender_password = "rrmx fjqo fxab xfdt"  # Use an App Password
+    sender_email = os.environ.get("SENDER_EMAIL", "gargimadala17@gmail.com")
+    sender_password = os.environ.get("SENDER_PASSWORD", "")
+
+    if not sender_password:
+        print("SMTP Error: SENDER_PASSWORD environment variable is not set.")
+        return False
 
     msg = MIMEMultipart()
     msg["From"] = sender_email
@@ -45,6 +54,8 @@ def send_otp_email(recipient_email: str, otp_code: str) -> bool:
 
 
 class VolunteerRegistration(QWidget):
+    CARD_WIDTH = 760
+
     def __init__(self, on_back_click=None):
         super().__init__()
         self.on_back_click = on_back_click
@@ -58,21 +69,24 @@ class VolunteerRegistration(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Scroll area setup
+        # Scroll area setup (kept, but the card is sized so it rarely needs it)
         scroll_area = QScrollArea()
+        scroll_area.setObjectName("RegisterScroll")
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
 
         scroll_content = QWidget()
+        scroll_content.setObjectName("RegisterScrollContent")  # new
         scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(24, 32, 24, 32)
         scroll_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Main Card Container
         card = QFrame()
         card.setObjectName("RegisterCard")
-        card.setFixedWidth(540)
+        card.setFixedWidth(self.CARD_WIDTH)
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(35, 35, 35, 35)
+        card_layout.setContentsMargins(52, 42, 52, 46)
 
         # Stacked Widget to switch between Registration & Email Verification
         self.stacked_widget = QStackedWidget()
@@ -88,15 +102,28 @@ class VolunteerRegistration(QWidget):
         self._build_mfa_page()
         self.stacked_widget.addWidget(self.mfa_page)
 
+        # Let the card shrink to whichever page is showing
+        self.stacked_widget.currentChanged.connect(self._fit_stack_to_current_page)
+        self._fit_stack_to_current_page(0)
+
         # Assembly
         scroll_layout.addWidget(card)
         scroll_area.setWidget(scroll_content)
         outer_layout.addWidget(scroll_area)
 
+    def _fit_stack_to_current_page(self, index):
+        """QStackedWidget sizes itself to its tallest page; ignore hidden pages so the
+        short verification page doesn't inherit the form page's height."""
+        for i in range(self.stacked_widget.count()):
+            page = self.stacked_widget.widget(i)
+            policy = QSizePolicy.Policy.Preferred if i == index else QSizePolicy.Policy.Ignored
+            page.setSizePolicy(policy, policy)
+        self.stacked_widget.updateGeometry()
+
     def _build_form_page(self):
         layout = QVBoxLayout(self.form_page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(14)
+        layout.setSpacing(18)
 
         title = QLabel("Join as a Volunteer")
         title.setObjectName("FormTitle")
@@ -108,10 +135,11 @@ class VolunteerRegistration(QWidget):
 
         layout.addWidget(title)
         layout.addWidget(subtitle)
+        layout.addSpacing(8)
 
         def add_labeled_widget(label_text, widget):
             col = QVBoxLayout()
-            col.setSpacing(4)
+            col.setSpacing(6)
             lbl = QLabel(label_text)
             lbl.setObjectName("FieldLabel")
             col.addWidget(lbl)
@@ -123,7 +151,7 @@ class VolunteerRegistration(QWidget):
         self.lastNameInput = QLineEdit()
 
         name_row = QHBoxLayout()
-        name_row.setSpacing(12)
+        name_row.setSpacing(20)
         name_row.addLayout(add_labeled_widget("First Name", self.firstNameInput))
         name_row.addLayout(add_labeled_widget("Last Name", self.lastNameInput))
         layout.addLayout(name_row)
@@ -137,7 +165,7 @@ class VolunteerRegistration(QWidget):
         self.gender_input.addItems(["Select Gender", "Female", "Male", "Non-binary", "Prefer not to say"])
 
         dob_gender_row = QHBoxLayout()
-        dob_gender_row.setSpacing(12)
+        dob_gender_row.setSpacing(20)
         dob_gender_row.addLayout(add_labeled_widget("Date of Birth", self.dob_input))
         dob_gender_row.addLayout(add_labeled_widget("Gender", self.gender_input))
         layout.addLayout(dob_gender_row)
@@ -157,7 +185,7 @@ class VolunteerRegistration(QWidget):
         self.pass_input.addAction(self.toggle_pwd_action, QLineEdit.ActionPosition.TrailingPosition)
 
         pass_row = QHBoxLayout()
-        pass_row.setSpacing(12)
+        pass_row.setSpacing(20)
         pass_row.addLayout(add_labeled_widget("Password", self.pass_input))
         pass_row.addLayout(add_labeled_widget("Confirm Password", self.confirmPass_input))
         layout.addLayout(pass_row)
@@ -169,12 +197,12 @@ class VolunteerRegistration(QWidget):
         self.zipcode_input.setPlaceholderText("e.g. 90210")
 
         location_row = QHBoxLayout()
-        location_row.setSpacing(12)
+        location_row.setSpacing(20)
         location_row.addLayout(add_labeled_widget("Country", self.country_input), stretch=2)
         location_row.addLayout(add_labeled_widget("Zip Code", self.zipcode_input), stretch=1)
         layout.addLayout(location_row)
 
-        # CAPTCHA Section
+        # CAPTCHA Section: image, refresh and answer all sit on one row
         captcha_container = QVBoxLayout()
         captcha_container.setSpacing(6)
         captcha_label = QLabel("Verification")
@@ -182,21 +210,30 @@ class VolunteerRegistration(QWidget):
         captcha_container.addWidget(captcha_label)
 
         captcha_row = QHBoxLayout()
+        captcha_row.setSpacing(10)
+
         self.captcha_image_label = QLabel()
+        self.captcha_image_label.setObjectName("CaptchaImage")
+        self.captcha_image_label.setFixedSize(204, 64)
+        self.captcha_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self.refresh_captcha_btn = QPushButton("🔄")
-        self.refresh_captcha_btn.setFixedWidth(40)
+        self.refresh_captcha_btn.setObjectName("CaptchaRefreshBtn")
+        self.refresh_captcha_btn.setFixedSize(46, 64)
         self.refresh_captcha_btn.clicked.connect(self.generate_captcha)
+
+        self.captcha_input = QLineEdit()
+        self.captcha_input.setPlaceholderText("Enter the code shown")
 
         captcha_row.addWidget(self.captcha_image_label)
         captcha_row.addWidget(self.refresh_captcha_btn)
+        captcha_row.addWidget(self.captcha_input, 1, Qt.AlignmentFlag.AlignVCenter)
         captcha_container.addLayout(captcha_row)
-
-        self.captcha_input = QLineEdit()
-        self.captcha_input.setPlaceholderText("Enter the code above")
-        captcha_container.addWidget(self.captcha_input)
 
         layout.addLayout(captcha_container)
         self.generate_captcha()
+
+        layout.addSpacing(6)
 
         submit_btn = QPushButton("Continue to Email Verification")
         submit_btn.setObjectName("PrimaryBtn")
@@ -212,7 +249,8 @@ class VolunteerRegistration(QWidget):
 
     def _build_mfa_page(self):
         layout = QVBoxLayout(self.mfa_page)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(18)
 
         otp_title = QLabel("Email Verification")
         otp_title.setObjectName("FormTitle")
@@ -224,8 +262,10 @@ class VolunteerRegistration(QWidget):
         self.otp_info_label.setWordWrap(True)
 
         self.mfa_code_input = QLineEdit()
-        self.mfa_code_input.setPlaceholderText("Enter 6-digit OTP code")
+        self.mfa_code_input.setObjectName("OtpInput")
+        self.mfa_code_input.setPlaceholderText("000000")
         self.mfa_code_input.setMaxLength(6)
+        self.mfa_code_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         verify_btn = QPushButton("Verify Code & Create Account")
         verify_btn.setObjectName("PrimaryBtn")
@@ -237,7 +277,9 @@ class VolunteerRegistration(QWidget):
 
         layout.addWidget(otp_title)
         layout.addWidget(self.otp_info_label)
+        layout.addSpacing(8)
         layout.addWidget(self.mfa_code_input)
+        layout.addSpacing(6)
         layout.addWidget(verify_btn)
         layout.addWidget(cancel_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
