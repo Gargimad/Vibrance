@@ -6,30 +6,40 @@
 
    Brand core
    --------------------------------------------------------------------------
-   Blush Beige (bg)        #D8CBC7   window + bottom bar background
-   Moxie Purple (brand)    #2D1A3E   nav bar, titles, primary button
+   Blush Beige (bg)        #D8CBC7   window + page background
+   Moxie Purple (brand)    #2D1A3E   titles, primary button
    Purple Hover            #47305C   primary button hover
-   Blueberry (accent)      #3D4BA8   card top rule, focus rings, hover accents
+   Blueberry (accent)      #3D4BA8   card top rule, focus rings, RSVP button
+   Blueberry Hover         #2F3B8A   RSVP button hover
 
    Surfaces & borders
    --------------------------------------------------------------------------
-   Card Surface            #F5F0EE   register card, popups, dropdown lists
+   Nav / Header Surface    #c1aea8   nav bar, bottom bar, page header
+   Filter Surface          #cbb9b4   search + filter strips
+   Card Surface            #F5F0EE   cards, popups, dropdown lists, dialogs
    Input Surface           #FBF8F7   input background (unfocused)
    Border                  #BFAFB3   card + input borders
-   Nav Border              rgba(216, 203, 199, 0.15)
+   Disabled Surface        #E4DAD6   disabled button background
 
    Text
    --------------------------------------------------------------------------
-   Text on Dark (nav)      #F5F0EE   text/icons on the purple nav bar
+   Text on Dark            #F5F0EE   text on purple / blueberry buttons
    Text Primary            #2D1A3E   input text, body text
-   Text Label              #4E3C5C   field labels
-   Text Muted              #7A6A86   subtitles, icons, secondary button
+   Text Label              #4E3C5C   field labels, descriptions
+   Text Muted              #6B5B77   subtitles, secondary text (AA contrast
+                                     on the card surface)
 
    Interaction
    --------------------------------------------------------------------------
    Selection BG            #2D1A3E
    Selection Text          #F5F0EE
-   Nav Hover BG            rgba(216, 203, 199, 0.15)
+   Hover BG (on nav)       rgba(45, 26, 62, 0.10)
+
+   Focus rings (keyboard navigation)
+   --------------------------------------------------------------------------
+   Filled buttons          2px #F5F0EE ring inside the button
+   Ghost buttons           2px #3D4BA8 ring
+   Padding is reduced by the extra border width so nothing shifts.
    ========================================================================== */
 
 /* Window & General Layout */
@@ -53,7 +63,8 @@ QMainWindow {
 }
 
 #BottomBar {
-    background-color: #D8CBC7;
+    background-color: #c1aea8;
+    border-top: 1px solid #BFAFB3;
 }
 
 #SloganText {
@@ -80,7 +91,7 @@ QMainWindow {
 
 #FormSubtitle {
     font-size: 14px;
-    color: #7A6A86;
+    color: #6B5B77;
 }
 
 #FieldLabel {
@@ -123,7 +134,7 @@ QLineEdit QToolButton {
     border: none;
     background: transparent;
     padding: 0px 6px;
-    color: #7A6A86;
+    color: #6B5B77;
 }
 
 QLineEdit QToolButton:hover {
@@ -192,6 +203,11 @@ QPushButton:hover {
     background-color: rgba(216, 203, 199, 0.15);
 }
 
+QPushButton:focus {
+    border: 2px solid #3D4BA8;
+    padding: 6px 14px;
+}
+
 QPushButton::menu-indicator {
     image: none;
     width: 0px;
@@ -212,9 +228,14 @@ QPushButton::menu-indicator {
     background-color: #47305C;
 }
 
+#PrimaryBtn:focus {
+    border: 2px solid #F5F0EE;
+    padding: 12px;
+}
+
 #SecondaryBtn {
     background-color: transparent;
-    color: #7A6A86;
+    color: #6B5B77;
     border: none;
     font-size: 13px;
 }
@@ -222,6 +243,16 @@ QPushButton::menu-indicator {
 #SecondaryBtn:hover {
     background-color: transparent;
     color: #3D4BA8;
+}
+
+#SecondaryBtn:focus {
+    border: 2px solid #3D4BA8;
+    padding: 6px 14px;
+}
+
+#CaptchaRefreshBtn:focus {
+    border: 2px solid #3D4BA8;
+    padding: 0px;
 }
 
 QMenu {
@@ -249,7 +280,7 @@ QScrollBar:vertical {
 }
 
 QScrollBar::handle:vertical {
-    background: #7A6A86;
+    background: #6B5B77;
     min-height: 32px;
     border-radius: 0px;
 }
@@ -265,7 +296,7 @@ QScrollBar:horizontal {
 }
 
 QScrollBar::handle:horizontal {
-    background: #7A6A86;
+    background: #6B5B77;
     min-width: 32px;
     border-radius: 0px;
 }
@@ -282,6 +313,7 @@ QScrollBar::add-line, QScrollBar::sub-line {
 QScrollBar::add-page, QScrollBar::sub-page {
     background: none;
 }
+
 #NavBar QPushButton {
     color: #2D1A3E;
 }
@@ -289,10 +321,537 @@ QScrollBar::add-page, QScrollBar::sub-page {
 #NavBar QPushButton:hover {
     background-color: rgba(45, 26, 62, 0.10);
 }
+
 /* Registration page backdrop — matches the landing page */
 #RegisterScroll,
 #RegisterScroll > QWidget#qt_scrollarea_viewport,
 #RegisterScrollContent {
     background-color: #D8CBC7;
     border: none;
+}
+
+/* Text styling */
+#InstructionText {
+    color: #1f2328;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: "Segoe UI", "SF Pro Display", Arial, sans-serif;
+}
+
+/* ==========================================================================
+   SEARCH BAR — strip directly beneath the nav bar
+   ========================================================================== */
+#SearchBar {
+    background-color: #cbb9b4;
+    border-bottom: 1px solid #BFAFB3;
+}
+
+#SearchCategoryCombo {
+    background-color: #FBF8F7;
+    min-height: 18px;
+}
+
+#SearchInput {
+    background-color: #FBF8F7;
+    min-height: 18px;
+}
+
+#SearchBtn {
+    background-color: #2D1A3E;
+    color: #F5F0EE;
+    font-weight: bold;
+    padding: 11px 22px;
+}
+
+#SearchBtn:hover {
+    background-color: #47305C;
+}
+
+#SearchBtn:focus {
+    border: 2px solid #F5F0EE;
+    padding: 9px 20px;
+}
+
+/* ==========================================================================
+   HOME SCROLL AREA — wraps hero + features + opportunities on the guest page
+   ========================================================================== */
+#HomeScrollArea,
+#HomeScrollArea > QWidget#qt_scrollarea_viewport,
+#HomeScrollContent {
+    background-color: #D8CBC7;
+    border: none;
+}
+
+#SectionTitle {
+    font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
+    font-size: 26px;
+    font-weight: bold;
+    color: #2D1A3E;
+}
+
+/* ==========================================================================
+   FEATURES SECTION — 3 cards under the hero
+   ========================================================================== */
+#FeaturesSection {
+    background-color: #D8CBC7;
+}
+
+#FeatureCard {
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-top: 4px solid #3D4BA8;
+    border-radius: 0px;
+}
+
+#FeatureImage {
+    background-color: #FBF8F7;
+    border: 1px solid #BFAFB3;
+    color: #6B5B77;
+    font-size: 13px;
+}
+
+#FeatureTitle {
+    font-size: 17px;
+    font-weight: bold;
+    color: #2D1A3E;
+}
+
+#FeatureDesc {
+    font-size: 13px;
+    color: #4E3C5C;
+}
+
+/* ==========================================================================
+   OPPORTUNITIES SECTION — soonest / newest / remote horizontal rows
+   ========================================================================== */
+#OpportunitiesSection {
+    background-color: #D8CBC7;
+}
+
+#OpportunityRowTitle {
+    font-size: 16px;
+    font-weight: bold;
+    color: #2D1A3E;
+    padding-left: 2px;
+}
+
+#OpportunityScroll,
+#OpportunityScroll > QWidget#qt_scrollarea_viewport,
+#OpportunityScrollContent {
+    background-color: transparent;
+    border: none;
+}
+
+#OpportunityCard {
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+}
+
+#OppBadge {
+    background-color: #3D4BA8;
+    color: #F5F0EE;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 3px 8px;
+    max-width: 90px;
+}
+
+#OppTitle {
+    font-size: 14px;
+    font-weight: bold;
+    color: #2D1A3E;
+}
+
+#OppOrg {
+    font-size: 12px;
+    color: #6B5B77;
+}
+
+#OppMeta {
+    font-size: 12px;
+    color: #4E3C5C;
+}
+
+#OpportunityEmpty {
+    color: #6B5B77;
+    font-size: 13px;
+    font-style: italic;
+    padding: 10px 2px;
+}
+
+/* ==========================================================================
+   FAQ PAGE — LIGHT MODE
+   ========================================================================== */
+#FAQPage,
+#FAQScrollArea,
+#FAQScrollArea > QWidget#qt_scrollarea_viewport,
+#FAQScrollContent {
+    background-color: #D8CBC7;
+    border: none;
+}
+
+#FAQTitle {
+    font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
+    font-size: 26px;
+    font-weight: bold;
+    color: #2D1A3E;
+}
+
+#FAQSearchInput {
+    background-color: #FBF8F7;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+    padding: 12px 14px;
+    font-size: 14px;
+    color: #2D1A3E;
+}
+
+#FAQSearchInput:focus {
+    border: 2px solid #3D4BA8;
+    padding: 11px 13px;
+    background-color: #FFFFFF;
+}
+
+#FAQItem {
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-left: 4px solid #3D4BA8;
+    border-radius: 0px;
+}
+
+#FAQQuestion {
+    font-size: 15px;
+    font-weight: bold;
+    color: #2D1A3E;
+}
+
+#FAQAnswer {
+    font-size: 13px;
+    color: #4E3C5C;
+    padding-top: 6px;
+    border-top: 1px solid #BFAFB3;
+}
+
+#FAQToggleBtn {
+    background-color: #FBF8F7;
+    color: #2D1A3E;
+    border: 1px solid #BFAFB3;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 2px 0px;
+    border-radius: 0px;
+}
+
+#FAQToggleBtn:hover {
+    background-color: #FFFFFF;
+    border-color: #3D4BA8;
+}
+
+#FAQToggleBtn:focus {
+    border: 2px solid #3D4BA8;
+    padding: 1px 0px;
+}
+
+#FAQNoResults {
+    color: #6B5B77;
+    font-size: 14px;
+    font-style: italic;
+    padding: 20px 0px;
+}
+
+/* ==========================================================================
+   VOLUNTEER PAGE — LIGHT MODE
+   ========================================================================== */
+#VolunteerPage,
+#VolunteerScroll,
+#VolunteerScroll > QWidget#qt_scrollarea_viewport,
+#VolunteerGridContainer,
+#VolunteerListContainer,
+#VolunteerContentStack,
+#VolunteerEmptyWrap {
+    background-color: #D8CBC7;
+    border: none;
+}
+
+#VolunteerHeader {
+    background-color: #c1aea8;
+    border-bottom: 1px solid #BFAFB3;
+}
+
+#VolunteerTitle {
+    font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
+    font-size: 24px;
+    font-weight: bold;
+    color: #2D1A3E;
+    padding-left: 10px;
+}
+
+#VolunteerBackBtn {
+    background-color: transparent;
+    color: #2D1A3E;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 8px 14px;
+    border: 1px solid #BFAFB3;
+}
+#VolunteerBackBtn:hover {
+    background-color: rgba(45, 26, 62, 0.10);
+}
+#VolunteerBackBtn:focus {
+    border: 2px solid #3D4BA8;
+    padding: 7px 13px;
+}
+
+#ViewToggleBtn {
+    background-color: #FBF8F7;
+    color: #2D1A3E;
+    border: 1px solid #BFAFB3;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: bold;
+}
+#ViewToggleBtn:checked {
+    background-color: #2D1A3E;
+    color: #F5F0EE;
+    border: 1px solid #2D1A3E;
+}
+#ViewToggleBtn:hover {
+    border: 1px solid #3D4BA8;
+}
+#ViewToggleBtn:focus {
+    border: 2px solid #3D4BA8;
+    padding: 7px 15px;
+}
+
+#VolunteerResultsCount {
+    font-size: 13px;
+    color: #4E3C5C;
+    font-style: italic;
+}
+
+#VolunteerEmpty {
+    font-size: 15px;
+    color: #6B5B77;
+    font-style: italic;
+}
+
+#VolunteerEmptyBtn {
+    background-color: #2D1A3E;
+    color: #F5F0EE;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 10px 22px;
+    border: none;
+}
+#VolunteerEmptyBtn:hover {
+    background-color: #47305C;
+}
+#VolunteerEmptyBtn:focus {
+    border: 2px solid #F5F0EE;
+    padding: 8px 20px;
+}
+
+/* ---- Filter bar ---- */
+#FilterBar {
+    background-color: #cbb9b4;
+    border-bottom: 1px solid #BFAFB3;
+}
+
+#FilterMoreRow {
+    background-color: transparent;
+}
+
+#FilterLabel {
+    font-size: 13px;
+    font-weight: bold;
+    color: #4E3C5C;
+}
+
+#FilterSearchInput,
+#FilterLocationInput,
+#FilterCombo,
+#FilterDate {
+    background-color: #FBF8F7;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+    padding: 9px 12px;
+    font-size: 13px;
+    color: #2D1A3E;
+    min-height: 18px;
+}
+#FilterSearchInput:focus,
+#FilterLocationInput:focus,
+#FilterCombo:focus,
+#FilterDate:focus {
+    border: 2px solid #3D4BA8;
+    padding: 8px 11px;
+    background-color: #FFFFFF;
+}
+
+#FilterClearBtn,
+#FilterMoreBtn,
+#DetailsCloseBtn {
+    background-color: transparent;
+    color: #4E3C5C;
+    border: 1px solid #BFAFB3;
+    padding: 8px 14px;
+    font-size: 13px;
+}
+#FilterClearBtn:hover,
+#FilterMoreBtn:hover,
+#DetailsCloseBtn:hover {
+    background-color: #FFFFFF;
+    color: #3D4BA8;
+    border-color: #3D4BA8;
+}
+#FilterMoreBtn:checked {
+    background-color: #FFFFFF;
+    color: #2D1A3E;
+    border-color: #3D4BA8;
+}
+#FilterClearBtn:focus,
+#FilterMoreBtn:focus,
+#DetailsCloseBtn:focus {
+    border: 2px solid #3D4BA8;
+    padding: 7px 13px;
+}
+
+/* ---- Event Card (grid + list) ---- */
+#EventCard {
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-radius: 0px;
+}
+#EventCard:hover {
+    border: 1px solid #3D4BA8;
+}
+
+#EventThumb {
+    background-color: #FBF8F7;
+    border: none;
+    color: #6B5B77;
+    font-size: 12px;
+}
+
+#EventCategoryBadge {
+    background-color: #3D4BA8;
+    color: #F5F0EE;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 4px 10px;
+}
+
+#EventLocationBadge {
+    background-color: transparent;
+    color: #4E3C5C;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 3px 8px;
+    border: 1px solid #BFAFB3;
+}
+
+#EventStatusBadge {
+    background-color: #2D1A3E;
+    color: #F5F0EE;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 4px 8px;
+}
+
+#EventTitle {
+    font-size: 15px;
+    font-weight: bold;
+    color: #2D1A3E;
+}
+
+#EventTitleList {
+    font-size: 17px;
+    font-weight: bold;
+    color: #2D1A3E;
+}
+
+#EventOrg {
+    font-size: 12px;
+    color: #6B5B77;
+    font-style: italic;
+}
+
+#EventDescription {
+    font-size: 12px;
+    color: #4E3C5C;
+}
+
+#EventMetaKey {
+    font-size: 12px;
+    color: #6B5B77;
+    font-weight: bold;
+}
+
+#EventMetaValue {
+    font-size: 12px;
+    color: #2D1A3E;
+    font-weight: bold;
+}
+
+/* Secondary action: Open link (purple) */
+#EventLinkBtn {
+    background-color: #2D1A3E;
+    color: #F5F0EE;
+    font-size: 12px;
+    font-weight: bold;
+    border: none;
+    padding: 9px 14px;
+}
+#EventLinkBtn:hover {
+    background-color: #47305C;
+}
+#EventLinkBtn:disabled {
+    background-color: #E4DAD6;
+    color: #A89AA0;
+}
+#EventLinkBtn:focus {
+    border: 2px solid #F5F0EE;
+    padding: 7px 12px;
+}
+
+/* Primary action: RSVP (Blueberry) */
+#EventRsvpBtn {
+    background-color: #3D4BA8;
+    color: #F5F0EE;
+    font-size: 12px;
+    font-weight: bold;
+    border: none;
+    padding: 9px 14px;
+}
+#EventRsvpBtn:hover {
+    background-color: #2F3B8A;
+}
+#EventRsvpBtn:disabled {
+    background-color: #E4DAD6;
+    color: #A89AA0;
+}
+#EventRsvpBtn:focus {
+    border: 2px solid #F5F0EE;
+    padding: 7px 12px;
+}
+
+/* ---- Event details dialog ---- */
+#EventDetailsDialog {
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-top: 4px solid #3D4BA8;
+    border-radius: 0px;
+}
+
+#DetailsScroll,
+#DetailsScroll > QWidget#qt_scrollarea_viewport,
+#DetailsScrollContent {
+    background-color: transparent;
+    border: none;
+}
+
+#DetailsDescription {
+    font-size: 13px;
+    color: #4E3C5C;
 }
