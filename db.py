@@ -1,5 +1,28 @@
-import sqlite3
+"""
+db.py — Unified database layer for Moxie.
+
+Schema (new):
+  users               userID, email UNIQUE, password, role, email_verified,
+                      mfa_enabled, created_at
+  volunteer_profiles  userID PK -> users, first_name, last_name, country,
+                      zipcode, dob, gender, skills, phone
+  organizations       orgID PK, userID -> users, org_name, description,
+                      website_link, city, country, created_at
+  org_members         memberID PK, userID -> users, orgID -> organizations,
+                      member_role
+  opportunities       opportunityID PK, orgID -> organizations, ... (unchanged)
+  event_signups       signupID PK, userID -> users, opportunityID -> opportunities, ...
+  notifications       notificationID PK, userID -> users, ...
+
+If you have an existing Volunteer.db built on the old schema
+(volunteers / organizations-with-passwords / event_signups.volunteerID),
+run migrate.py once. After migration the old tables are renamed to
+*_legacy_backup so you can inspect them if something goes wrong.
+"""
+
 import os
+import sqlite3
+import hashlib
 from datetime import datetime
 
 try:
@@ -7,14 +30,15 @@ try:
     _HAS_BCRYPT = True
 except ImportError:
     _HAS_BCRYPT = False
-    import hashlib
 
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Volunteer.db")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Password hashing (bcrypt if available, PBKDF2-SHA256 fallback)
+# ─────────────────────────────────────────────────────────────────────────────
 def hash_password(plain: str) -> str:
-    """Hash a password. Uses bcrypt if available, else a salted PBKDF2 fallback."""
     if _HAS_BCRYPT:
         return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     salt = os.urandom(16)
@@ -25,27 +49,32 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, stored: str) -> bool:
     if not stored:
         return False
-    if stored.startswith("$2"):  # bcrypt
-        if not _HAS_BCRYPT:
-            return False
+    # bcrypt
+    if stored.startswith("$2") and _HAS_BCRYPT:
         try:
             return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("utf-8"))
         except ValueError:
             return False
+    # pbkdf2
     if stored.startswith("pbkdf2$"):
-        _, salt_hex, dk_hex = stored.split("$")
-        salt = bytes.fromhex(salt_hex)
-        expected = bytes.fromhex(dk_hex)
-        dk = hashlib.pbkdf2_hmac("sha256", plain.encode("utf-8"), salt, 200_000)
-        return dk == expected
-    # Legacy plaintext — compare directly (migration path only)
+        try:
+            _, salt_hex, dk_hex = stored.split("$")
+            salt = bytes.fromhex(salt_hex)
+            expected = bytes.fromhex(dk_hex)
+            dk = hashlib.pbkdf2_hmac("sha256", plain.encode("utf-8"), salt, 200_000)
+            return dk == expected
+        except (ValueError, AttributeError):
+            return False
+    # legacy plaintext — only reachable for pre-migration rows
     return plain == stored
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Database
+# ─────────────────────────────────────────────────────────────────────────────
 class Database:
     def __init__(self, db_path: str = DB_PATH):
-        # check_same_thread=False is needed once Streamlit touches the DB.
-        # WAL keeps PyQt and Streamlit from fighting over a single write lock.
+        self.db_path = db_path
         self.connection = sqlite3.connect(db_path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.cursor = self.connection.cursor()
@@ -53,164 +82,395 @@ class Database:
         self.cursor.execute("PRAGMA journal_mode = WAL")
         self.createTable()
 
-    # ------------------------------------------------------------------
-    # Schema
-    # ------------------------------------------------------------------
+    # ── Schema ────────────────────────────────────────────────────────────
     def createTable(self):
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS volunteers (
-                volunteerID   INTEGER PRIMARY KEY AUTOINCREMENT,
-                gender        TEXT,
-                first_name    TEXT,
-                last_name     TEXT,
-                email         TEXT UNIQUE,
-                password      TEXT,
-                country       TEXT,
-                zipcode       TEXT,
-                dob           TEXT,
-                skills        TEXT,
-                mfa_enabled   INTEGER DEFAULT 1
-            );
+        CREATE TABLE IF NOT EXISTS users (
+            userID        INTEGER PRIMARY KEY AUTOINCREMENT,
+            email         TEXT UNIQUE NOT NULL,
+            password      TEXT NOT NULL,
+            role          TEXT NOT NULL CHECK(role IN ('volunteer', 'org')),
+            email_verified INTEGER DEFAULT 0,
+            mfa_enabled   INTEGER DEFAULT 1,
+            created_at    TEXT DEFAULT CURRENT_TIMESTAMP
+        );
         """)
 
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS organizations (
-                orgID         INTEGER PRIMARY KEY AUTOINCREMENT,
-                org_name      TEXT NOT NULL,
-                description   TEXT,
-                email         TEXT UNIQUE,
-                password      TEXT,
-                website_link  TEXT,
-                city          TEXT,
-                country       TEXT,
-                created_at    TEXT DEFAULT CURRENT_TIMESTAMP
-            );
+        CREATE TABLE IF NOT EXISTS volunteer_profiles (
+            userID     INTEGER PRIMARY KEY,
+            first_name TEXT,
+            last_name  TEXT,
+            country    TEXT,
+            zipcode    TEXT,
+            dob        TEXT,
+            gender     TEXT,
+            skills     TEXT,
+            phone      TEXT,
+            FOREIGN KEY(userID) REFERENCES users(userID) ON DELETE CASCADE
+        );
         """)
 
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS opportunities (
-                opportunityID   INTEGER PRIMARY KEY AUTOINCREMENT,
-                orgID           INTEGER,
-                title           TEXT NOT NULL,
-                description     TEXT,
-                category        TEXT,
-                location        TEXT,
-                address         TEXT,
-                is_remote       INTEGER DEFAULT 0,
-                event_date      TEXT,
-                start_time      TEXT,
-                end_time        TEXT,
-                capacity        INTEGER,
-                status          TEXT DEFAULT 'open',
-                required_skills TEXT,
-                contact_name    TEXT,
-                contact_email   TEXT,
-                created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
-                thumbnail       TEXT,
-                FOREIGN KEY(orgID) REFERENCES organizations(orgID) ON DELETE CASCADE
-            );
+        CREATE TABLE IF NOT EXISTS organizations (
+            orgID        INTEGER PRIMARY KEY AUTOINCREMENT,
+            userID       INTEGER,
+            org_name     TEXT NOT NULL,
+            description  TEXT,
+            website_link TEXT,
+            city         TEXT,
+            country      TEXT,
+            created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(userID) REFERENCES users(userID) ON DELETE CASCADE
+        );
         """)
 
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS event_signups (
-                signupID       INTEGER PRIMARY KEY AUTOINCREMENT,
-                volunteerID    INTEGER NOT NULL,
-                opportunityID  INTEGER NOT NULL,
-                status         TEXT DEFAULT 'registered',
-                signup_time    TEXT DEFAULT CURRENT_TIMESTAMP,
-                check_in_time  TEXT,
-                check_out_time TEXT,
-                hours_logged   REAL,
-                UNIQUE(volunteerID, opportunityID),
-                FOREIGN KEY(volunteerID)   REFERENCES volunteers(volunteerID) ON DELETE CASCADE,
-                FOREIGN KEY(opportunityID) REFERENCES opportunities(opportunityID) ON DELETE CASCADE
-            );
+        CREATE TABLE IF NOT EXISTS org_members (
+            memberID    INTEGER PRIMARY KEY AUTOINCREMENT,
+            userID      INTEGER NOT NULL,
+            orgID       INTEGER NOT NULL,
+            member_role TEXT DEFAULT 'member',
+            UNIQUE(userID, orgID),
+            FOREIGN KEY(userID) REFERENCES users(userID) ON DELETE CASCADE,
+            FOREIGN KEY(orgID) REFERENCES organizations(orgID) ON DELETE CASCADE
+        );
         """)
 
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS notifications (
-                notificationID        INTEGER PRIMARY KEY AUTOINCREMENT,
-                volunteerID           INTEGER NOT NULL,
-                message               TEXT NOT NULL,
-                type                  TEXT,
-                related_opportunityID INTEGER,
-                created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
-                read_at               TEXT,
-                FOREIGN KEY(volunteerID) REFERENCES volunteers(volunteerID) ON DELETE CASCADE
-            );
+        CREATE TABLE IF NOT EXISTS opportunities (
+            opportunityID   INTEGER PRIMARY KEY AUTOINCREMENT,
+            orgID           INTEGER,
+            title           TEXT NOT NULL,
+            description     TEXT,
+            category        TEXT,
+            location        TEXT,
+            address         TEXT,
+            is_remote       INTEGER DEFAULT 0,
+            event_date      TEXT,
+            start_time      TEXT,
+            end_time        TEXT,
+            capacity        INTEGER,
+            status          TEXT DEFAULT 'open',
+            required_skills TEXT,
+            contact_name    TEXT,
+            contact_email   TEXT,
+            created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+            thumbnail       TEXT,
+            FOREIGN KEY(orgID) REFERENCES organizations(orgID) ON DELETE CASCADE
+        );
         """)
 
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS event_signups (
+            signupID      INTEGER PRIMARY KEY AUTOINCREMENT,
+            userID        INTEGER NOT NULL,
+            opportunityID INTEGER NOT NULL,
+            status        TEXT DEFAULT 'registered',
+            signup_time   TEXT DEFAULT CURRENT_TIMESTAMP,
+            check_in_time TEXT,
+            check_out_time TEXT,
+            hours_logged  REAL,
+            UNIQUE(userID, opportunityID),
+            FOREIGN KEY(userID) REFERENCES users(userID) ON DELETE CASCADE,
+            FOREIGN KEY(opportunityID) REFERENCES opportunities(opportunityID) ON DELETE CASCADE
+        );
+        """)
+
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            notificationID        INTEGER PRIMARY KEY AUTOINCREMENT,
+            userID                INTEGER NOT NULL,
+            message               TEXT NOT NULL,
+            type                  TEXT,
+            related_opportunityID INTEGER,
+            created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+            read_at               TEXT,
+            FOREIGN KEY(userID) REFERENCES users(userID) ON DELETE CASCADE
+        );
+        """)
+
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_opp_org ON opportunities(orgID)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_signup_user ON event_signups(userID)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_signup_opp ON event_signups(opportunityID)"
+        )
         self.connection.commit()
 
-    # ------------------------------------------------------------------
-    # Volunteers
-    # ------------------------------------------------------------------
-    def addVolunteer(self, gender, first_name, last_name, email, password,
-                     country, zipcode, dob, skills="", mfa_enabled=1):
-        try:
-            self.cursor.execute("""
-                INSERT INTO volunteers
-                    (gender, first_name, last_name, email, password,
-                     country, zipcode, dob, skills, mfa_enabled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (gender, first_name, last_name, email, hash_password(password),
-                  country, zipcode, dob, skills, 1 if mfa_enabled else 0))
-            self.connection.commit()
-            return True
-        except sqlite3.IntegrityError:
-            return False
+    # ── Users / auth ──────────────────────────────────────────────────────
+    def register_user(self, email, password, role, **profile):
+        """
+        Create a user + role-specific profile row. Returns the new userID,
+        or None if the email already exists / role is invalid.
 
-    def get_user_by_email(self, email):
-        self.cursor.execute("""
-            SELECT volunteerID, first_name, last_name, email, password,
-                   country, zipcode, dob, skills, mfa_enabled
-            FROM volunteers WHERE email = ?
-        """, (email,))
-        return self.cursor.fetchone()
-
-    def authenticate_volunteer(self, email, password):
-        row = self.get_user_by_email(email)
-        if not row:
+        role='volunteer' reads:  first_name, last_name, country, zipcode,
+                                 dob, gender, skills, phone
+        role='org'       reads:  org_name, description, website_link,
+                                 city, country
+        """
+        if role not in ("volunteer", "org"):
             return None
-        if verify_password(password, row["password"]):
-            return row
-        return None
-
-    # ------------------------------------------------------------------
-    # Organizations
-    # ------------------------------------------------------------------
-    def addOrganization(self, org_name, description, email, password,
-                        website_link="", city="", country=""):
         try:
-            self.cursor.execute("""
-                INSERT INTO organizations
-                    (org_name, description, email, password, website_link, city, country)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (org_name, description, email, hash_password(password),
-                  website_link, city, country))
-            self.connection.commit()
-            return True
-        except sqlite3.IntegrityError:
-            return False
+            self.cursor.execute(
+                "INSERT INTO users (email, password, role, email_verified) "
+                "VALUES (?, ?, ?, 1)",  # email is verified by the OTP step before this call
+                (email.strip().lower(), hash_password(password), role),
+            )
+            userID = self.cursor.lastrowid
 
-    def get_org_by_email(self, email):
+            if role == "volunteer":
+                self.cursor.execute("""
+                    INSERT INTO volunteer_profiles
+                    (userID, first_name, last_name, country, zipcode,
+                     dob, gender, skills, phone)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    userID,
+                    profile.get("first_name", ""),
+                    profile.get("last_name", ""),
+                    profile.get("country", ""),
+                    profile.get("zipcode", ""),
+                    profile.get("dob", ""),
+                    profile.get("gender", ""),
+                    profile.get("skills", ""),
+                    profile.get("phone", ""),
+                ))
+            else:  # org
+                self.cursor.execute("""
+                    INSERT INTO organizations
+                    (userID, org_name, description, website_link, city, country)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    userID,
+                    profile.get("org_name", ""),
+                    profile.get("description", ""),
+                    profile.get("website_link", ""),
+                    profile.get("city", ""),
+                    profile.get("country", ""),
+                ))
+            self.connection.commit()
+            return userID
+        except sqlite3.IntegrityError:
+            self.connection.rollback()
+            return None
+
+    def email_exists(self, email):
         self.cursor.execute(
-            "SELECT orgID, org_name, email, password, website_link, city, country "
-            "FROM organizations WHERE email = ?", (email,))
+            "SELECT 1 FROM users WHERE email = ?", (email.strip().lower(),)
+        )
+        return self.cursor.fetchone() is not None
+
+    def authenticate(self, email, password):
+        """
+        Returns a dict with user info + role-specific profile, or None.
+        Keys always include: userID, email, role, mfa_enabled.
+        Volunteer adds: first_name, last_name, country, zipcode, dob,
+                        gender, skills, phone
+        Org adds:       orgID, org_name, description, website_link,
+                        city, country
+        """
+        self.cursor.execute(
+            "SELECT userID, email, password, role, email_verified, mfa_enabled "
+            "FROM users WHERE email = ?",
+            (email.strip().lower(),),
+        )
+        row = self.cursor.fetchone()
+        if not row or not verify_password(password, row["password"]):
+            return None
+        return self.get_user_profile(row["userID"])
+
+    def get_user_profile(self, userID):
+        self.cursor.execute(
+            "SELECT userID, email, role, email_verified, mfa_enabled, created_at "
+            "FROM users WHERE userID = ?", (userID,),
+        )
+        user = self.cursor.fetchone()
+        if not user:
+            return None
+        result = dict(user)
+
+        if user["role"] == "volunteer":
+            self.cursor.execute(
+                "SELECT first_name, last_name, country, zipcode, "
+                "dob, gender, skills, phone "
+                "FROM volunteer_profiles WHERE userID = ?", (userID,),
+            )
+            prof = self.cursor.fetchone()
+            if prof:
+                result.update(dict(prof))
+        elif user["role"] == "org":
+            self.cursor.execute(
+                "SELECT orgID, org_name, description, website_link, "
+                "city, country FROM organizations WHERE userID = ?",
+                (userID,),
+            )
+            org = self.cursor.fetchone()
+            if org:
+                result.update(dict(org))
+
+        return result
+
+    def set_mfa_enabled(self, userID, enabled: bool):
+        self.cursor.execute(
+            "UPDATE users SET mfa_enabled = ? WHERE userID = ?",
+            (1 if enabled else 0, userID),
+        )
+        self.connection.commit()
+
+    def update_volunteer_profile(self, userID, **fields):
+        allowed = {"first_name", "last_name", "country", "zipcode",
+                   "dob", "gender", "skills", "phone"}
+        sets, params = [], []
+        for k, v in fields.items():
+            if k in allowed:
+                sets.append(f"{k} = ?")
+                params.append(v)
+        if not sets:
+            return False
+        params.append(userID)
+        self.cursor.execute(
+            f"UPDATE volunteer_profiles SET {', '.join(sets)} WHERE userID = ?",
+            params,
+        )
+        self.connection.commit()
+        return True
+
+    # ── Opportunities ─────────────────────────────────────────────────────
+    def _opportunity_base_query(self):
+        return """
+        SELECT o.opportunityID, o.title, o.description, o.category,
+               o.location, o.address, o.is_remote, o.event_date,
+               o.start_time, o.end_time, o.capacity, o.status,
+               o.required_skills, o.contact_name, o.contact_email,
+               o.created_at, o.updated_at, o.thumbnail,
+               org.org_name, org.website_link, org.orgID,
+               (SELECT COUNT(*) FROM event_signups s
+                WHERE s.opportunityID = o.opportunityID
+                  AND s.status = 'registered') AS registered_count
+        FROM opportunities o
+        LEFT JOIN organizations org ON o.orgID = org.orgID
+        """
+
+    def getAllOpportunitiesWithLinks(self, limit=500):
+        self.cursor.execute(
+            self._opportunity_base_query() +
+            " ORDER BY o.event_date ASC LIMIT ?", (limit,),
+        )
+        return self.cursor.fetchall()
+
+    def getSoonestOpportunities(self, limit=10):
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.cursor.execute(
+            self._opportunity_base_query() + """
+            WHERE o.event_date IS NOT NULL AND o.event_date >= ?
+              AND COALESCE(o.status, 'open') != 'cancelled'
+            ORDER BY o.event_date ASC LIMIT ?
+            """, (today, limit),
+        )
+        return self.cursor.fetchall()
+
+    def getNewestOpportunities(self, limit=10):
+        self.cursor.execute(
+            self._opportunity_base_query() + """
+            WHERE COALESCE(o.status, 'open') != 'cancelled'
+            ORDER BY o.created_at DESC LIMIT ?
+            """, (limit,),
+        )
+        return self.cursor.fetchall()
+
+    def getRemoteOpportunities(self, limit=10):
+        self.cursor.execute(
+            self._opportunity_base_query() + """
+            WHERE o.is_remote = 1
+              AND COALESCE(o.status, 'open') != 'cancelled'
+            ORDER BY o.event_date ASC LIMIT ?
+            """, (limit,),
+        )
+        return self.cursor.fetchall()
+
+    def getOpportunitiesByOrg(self, orgID):
+        self.cursor.execute(
+            self._opportunity_base_query() +
+            " WHERE o.orgID = ? ORDER BY o.event_date ASC", (orgID,),
+        )
+        return self.cursor.fetchall()
+
+    def getOpportunityByID(self, opportunityID):
+        self.cursor.execute(
+            self._opportunity_base_query() + " WHERE o.opportunityID = ?",
+            (opportunityID,),
+        )
         return self.cursor.fetchone()
 
-    def authenticate_org(self, email, password):
-        row = self.get_org_by_email(email)
-        if not row:
-            return None
-        if verify_password(password, row["password"]):
-            return row
-        return None
+    def getDistinctCategories(self):
+        self.cursor.execute("""
+            SELECT DISTINCT category FROM opportunities
+            WHERE category IS NOT NULL AND category != ''
+            ORDER BY category ASC
+        """)
+        return [r["category"] for r in self.cursor.fetchall()]
 
-    # ------------------------------------------------------------------
-    # Opportunities
-    # ------------------------------------------------------------------
+    def searchOpportunitiesFiltered(self, keyword="", type_filter="All",
+                                    location="", category="All Causes",
+                                    date_from=None, date_to=None,
+                                    upcoming_only=True, limit=1000):
+        conditions, params = [], []
+
+        if keyword:
+            like = f"%{keyword}%"
+            conditions.append(
+                "(o.title LIKE ? OR o.description LIKE ? OR o.location LIKE ? "
+                " OR org.org_name LIKE ? OR o.category LIKE ?)"
+            )
+            params.extend([like] * 5)
+
+        if type_filter == "Remote":
+            conditions.append("o.is_remote = 1")
+        elif type_filter == "In-person":
+            conditions.append("o.is_remote = 0")
+
+        if location:
+            like = f"%{location}%"
+            conditions.append("(o.location LIKE ? OR o.address LIKE ?)")
+            params.extend([like, like])
+
+        if category and category != "All Causes":
+            conditions.append("o.category = ?")
+            params.append(category)
+
+        if date_from:
+            conditions.append("o.event_date >= ?")
+            params.append(date_from)
+        if date_to:
+            conditions.append("o.event_date <= ?")
+            params.append(date_to)
+
+        if upcoming_only:
+            today = datetime.now().strftime("%Y-%m-%d")
+            conditions.append("(o.event_date IS NULL OR o.event_date >= ?)")
+            params.append(today)
+
+        conditions.append("COALESCE(o.status, 'open') != 'cancelled'")
+
+        q = self._opportunity_base_query()
+        if conditions:
+            q += " WHERE " + " AND ".join(conditions)
+        q += " ORDER BY o.event_date ASC LIMIT ?"
+        params.append(limit)
+
+        self.cursor.execute(q, params)
+        return self.cursor.fetchall()
+
+    def searchOpportunities(self, keyword, category="All", limit=25):
+        return self.searchOpportunitiesFiltered(
+            keyword=keyword, type_filter=category, limit=limit
+        )
+
     def addOpportunity(self, orgID, title, description, category, location,
                        is_remote, event_date, thumbnail=None,
                        start_time=None, end_time=None, capacity=None,
@@ -219,20 +479,21 @@ class Database:
         try:
             self.cursor.execute("""
                 INSERT INTO opportunities
-                    (orgID, title, description, category, location, address,
-                     is_remote, event_date, start_time, end_time, capacity,
-                     status, required_skills, contact_name, contact_email,
-                     thumbnail)
+                (orgID, title, description, category, location, address,
+                 is_remote, event_date, start_time, end_time, capacity,
+                 status, required_skills, contact_name, contact_email, thumbnail)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (orgID, title, description, category, location, address,
-                  1 if is_remote else 0, event_date, start_time, end_time,
-                  capacity, status, required_skills, contact_name,
-                  contact_email, thumbnail))
+            """, (
+                orgID, title, description, category, location, address,
+                1 if is_remote else 0, event_date, start_time, end_time,
+                capacity, status, required_skills, contact_name,
+                contact_email, thumbnail,
+            ))
             self.connection.commit()
-            return True
+            return self.cursor.lastrowid
         except sqlite3.Error as e:
-            print("Create opportunity error:", e)
-            return False
+            print("addOpportunity error:", e)
+            return None
 
     def updateOpportunity(self, opportunityID, **fields):
         allowed = {"title", "description", "category", "location", "address",
@@ -253,112 +514,42 @@ class Database:
         params.append(opportunityID)
         try:
             self.cursor.execute(
-                f"UPDATE opportunities SET {', '.join(sets)} WHERE opportunityID = ?",
-                params)
+                f"UPDATE opportunities SET {', '.join(sets)} "
+                f"WHERE opportunityID = ?", params,
+            )
             self.connection.commit()
             return True
         except sqlite3.Error as e:
-            print("Update opportunity error:", e)
+            print("updateOpportunity error:", e)
             return False
 
-    def _opportunity_base_query(self):
-        return """
-            SELECT o.opportunityID, o.title, o.description, o.category,
-                   o.location, o.address, o.is_remote, o.event_date,
-                   o.start_time, o.end_time, o.capacity, o.status,
-                   o.required_skills, o.contact_name, o.contact_email,
-                   o.created_at, o.updated_at, o.thumbnail,
-                   org.org_name, org.website_link, org.orgID
-            FROM opportunities o
-            LEFT JOIN organizations org ON o.orgID = org.orgID
-        """
-
-    def getAllOpportunitiesWithLinks(self, limit=500):
-        q = self._opportunity_base_query() + " ORDER BY o.event_date ASC LIMIT ?"
-        self.cursor.execute(q, (limit,))
-        return self.cursor.fetchall()
-
-    def getSoonestOpportunities(self, limit=10):
-        today = datetime.now().strftime("%Y-%m-%d")
-        q = self._opportunity_base_query() + """
-            WHERE o.event_date IS NOT NULL AND o.event_date >= ?
-              AND COALESCE(o.status, 'open') != 'cancelled'
-            ORDER BY o.event_date ASC LIMIT ?
-        """
-        self.cursor.execute(q, (today, limit))
-        return self.cursor.fetchall()
-
-    def getNewestOpportunities(self, limit=10):
-        q = self._opportunity_base_query() + """
-            WHERE COALESCE(o.status, 'open') != 'cancelled'
-            ORDER BY o.created_at DESC LIMIT ?
-        """
-        self.cursor.execute(q, (limit,))
-        return self.cursor.fetchall()
-
-    def getRemoteOpportunities(self, limit=10):
-        q = self._opportunity_base_query() + """
-            WHERE o.is_remote = 1
-              AND COALESCE(o.status, 'open') != 'cancelled'
-            ORDER BY o.event_date ASC LIMIT ?
-        """
-        self.cursor.execute(q, (limit,))
-        return self.cursor.fetchall()
-
-    def getOpportunitiesByOrg(self, orgID):
-        q = self._opportunity_base_query() + " WHERE o.orgID = ? ORDER BY o.event_date ASC"
-        self.cursor.execute(q, (orgID,))
-        return self.cursor.fetchall()
-
-    def getDistinctCategories(self):
-        self.cursor.execute("""
-            SELECT DISTINCT category FROM opportunities
-            WHERE category IS NOT NULL AND category != ''
-            ORDER BY category ASC
-        """)
-        return [r["category"] for r in self.cursor.fetchall()]
-
-    def searchOpportunities(self, keyword, category="All", limit=25):
-        like = f"%{keyword}%"
-        q = self._opportunity_base_query() + """
-            WHERE (o.title LIKE ? OR o.description LIKE ?
-                   OR o.location LIKE ? OR org.org_name LIKE ?)
-        """
-        params = [like, like, like, like]
-
-        if category == "Remote":
-            q += " AND o.is_remote = 1"
-        elif category == "Organizations":
-            q += " AND org.org_name LIKE ?"
-            params.append(like)
-
-        q += " ORDER BY o.event_date ASC LIMIT ?"
-        params.append(limit)
-        self.cursor.execute(q, params)
-        return self.cursor.fetchall()
-
-    # ------------------------------------------------------------------
-    # Signups
-    # ------------------------------------------------------------------
-    def registerForOpportunity(self, volunteerID, opportunityID):
+    # ── Signups ───────────────────────────────────────────────────────────
+    def registerForOpportunity(self, userID, opportunityID):
+        """Returns 'ok', 'full', 'duplicate', or 'error'."""
         try:
-            # Capacity check
             self.cursor.execute(
-                "SELECT capacity FROM opportunities WHERE opportunityID = ?",
-                (opportunityID,))
+                "SELECT capacity, COALESCE(status, 'open') AS status "
+                "FROM opportunities WHERE opportunityID = ?", (opportunityID,),
+            )
             row = self.cursor.fetchone()
-            if row and row["capacity"] is not None:
+            if not row:
+                return "error"
+            if row["status"] != "open":
+                return "full"
+
+            if row["capacity"] is not None:
                 self.cursor.execute(
                     "SELECT COUNT(*) AS c FROM event_signups "
                     "WHERE opportunityID = ? AND status = 'registered'",
-                    (opportunityID,))
+                    (opportunityID,),
+                )
                 if self.cursor.fetchone()["c"] >= row["capacity"]:
                     return "full"
 
             self.cursor.execute("""
-                INSERT INTO event_signups (volunteerID, opportunityID, status)
+                INSERT INTO event_signups (userID, opportunityID, status)
                 VALUES (?, ?, 'registered')
-            """, (volunteerID, opportunityID))
+            """, (userID, opportunityID))
             self.connection.commit()
             return "ok"
         except sqlite3.IntegrityError:
@@ -367,92 +558,91 @@ class Database:
             print("registerForOpportunity error:", e)
             return "error"
 
-    def cancelSignup(self, volunteerID, opportunityID):
+    def cancelSignup(self, userID, opportunityID):
         self.cursor.execute("""
             UPDATE event_signups SET status = 'cancelled'
-            WHERE volunteerID = ? AND opportunityID = ?
-        """, (volunteerID, opportunityID))
+            WHERE userID = ? AND opportunityID = ?
+        """, (userID, opportunityID))
         self.connection.commit()
         return self.cursor.rowcount > 0
 
-    def checkIn(self, volunteerID, opportunityID):
+    def checkIn(self, userID, opportunityID):
         now = datetime.now().isoformat(timespec="seconds")
         self.cursor.execute("""
-            UPDATE event_signups
-            SET check_in_time = ?
-            WHERE volunteerID = ? AND opportunityID = ? AND check_in_time IS NULL
-        """, (now, volunteerID, opportunityID))
+            UPDATE event_signups SET check_in_time = ?
+            WHERE userID = ? AND opportunityID = ? AND check_in_time IS NULL
+        """, (now, userID, opportunityID))
         self.connection.commit()
         return self.cursor.rowcount > 0
 
-    def checkOut(self, volunteerID, opportunityID):
+    def checkOut(self, userID, opportunityID):
         now = datetime.now().isoformat(timespec="seconds")
         self.cursor.execute("""
             UPDATE event_signups
             SET check_out_time = ?,
                 hours_logged = ROUND(
                     (julianday(?) - julianday(check_in_time)) * 24.0, 2)
-            WHERE volunteerID = ? AND opportunityID = ?
+            WHERE userID = ? AND opportunityID = ?
               AND check_in_time IS NOT NULL AND check_out_time IS NULL
-        """, (now, now, volunteerID, opportunityID))
+        """, (now, now, userID, opportunityID))
         self.connection.commit()
         return self.cursor.rowcount > 0
 
-    def getSignupsForVolunteer(self, volunteerID):
+    def getSignupsForVolunteer(self, userID):
         self.cursor.execute("""
             SELECT s.*, o.title, o.event_date, o.start_time, o.end_time,
                    o.location, o.is_remote, org.org_name
             FROM event_signups s
             JOIN opportunities o ON s.opportunityID = o.opportunityID
             LEFT JOIN organizations org ON o.orgID = org.orgID
-            WHERE s.volunteerID = ?
+            WHERE s.userID = ?
             ORDER BY o.event_date DESC
-        """, (volunteerID,))
+        """, (userID,))
         return self.cursor.fetchall()
 
-    def getSignup(self, volunteerID, opportunityID):
+    def getSignup(self, userID, opportunityID):
         self.cursor.execute("""
             SELECT * FROM event_signups
-            WHERE volunteerID = ? AND opportunityID = ?
-        """, (volunteerID, opportunityID))
+            WHERE userID = ? AND opportunityID = ?
+        """, (userID, opportunityID))
         return self.cursor.fetchone()
 
     def getSignupsForOpportunity(self, opportunityID):
         self.cursor.execute("""
-            SELECT s.*, v.first_name, v.last_name, v.email
+            SELECT s.*, u.email, vp.first_name, vp.last_name
             FROM event_signups s
-            JOIN volunteers v ON s.volunteerID = v.volunteerID
+            JOIN users u ON s.userID = u.userID
+            LEFT JOIN volunteer_profiles vp ON u.userID = vp.userID
             WHERE s.opportunityID = ?
             ORDER BY s.signup_time ASC
         """, (opportunityID,))
         return self.cursor.fetchall()
 
-    # ------------------------------------------------------------------
-    # Notifications
-    # ------------------------------------------------------------------
-    def addNotification(self, volunteerID, message, type_=None,
+    # ── Notifications ─────────────────────────────────────────────────────
+    def addNotification(self, userID, message, type_=None,
                         related_opportunityID=None):
         self.cursor.execute("""
-            INSERT INTO notifications (volunteerID, message, type, related_opportunityID)
+            INSERT INTO notifications
+            (userID, message, type, related_opportunityID)
             VALUES (?, ?, ?, ?)
-        """, (volunteerID, message, type_, related_opportunityID))
+        """, (userID, message, type_, related_opportunityID))
         self.connection.commit()
 
-    def getNotifications(self, volunteerID, limit=50):
+    def getNotifications(self, userID, limit=50):
         self.cursor.execute("""
-            SELECT * FROM notifications
-            WHERE volunteerID = ?
+            SELECT * FROM notifications WHERE userID = ?
             ORDER BY created_at DESC LIMIT ?
-        """, (volunteerID, limit))
+        """, (userID, limit))
         return self.cursor.fetchall()
 
     def markNotificationRead(self, notificationID):
-        self.cursor.execute(
-            "UPDATE notifications SET read_at = CURRENT_TIMESTAMP "
-            "WHERE notificationID = ?", (notificationID,))
+        self.cursor.execute("""
+            UPDATE notifications SET read_at = CURRENT_TIMESTAMP
+            WHERE notificationID = ?
+        """, (notificationID,))
         self.connection.commit()
 
-    # ------------------------------------------------------------------
+    # ── Shutdown ──────────────────────────────────────────────────────────
     def close(self):
         try:
             self.cursor.close()
