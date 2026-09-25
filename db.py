@@ -1,17 +1,17 @@
 """
 db.py — Unified database layer for Moxie.
 
-Schema (new):
+Schema:
   users               userID, email UNIQUE, password, role, email_verified,
                       mfa_enabled, created_at
   volunteer_profiles  userID PK -> users, first_name, last_name, country,
                       zipcode, dob, gender, skills, phone
-  organizations       orgID PK, userID -> users, org_name, description,
-                      website_link, city, country, created_at
-  org_members         memberID PK, userID -> users, orgID -> organizations,
-                      member_role
+  organizations       orgID PK, userID (nullable for external imports),
+                      org_name, description, website_link, city, country,
+                      source_id (external key, e.g. Volunteer Connector URL)
+  org_members         memberID PK, userID -> users, orgID -> organizations
   opportunities       opportunityID PK, orgID -> organizations, ...
-  event_signups       signupID PK, userID -> users, opportunityID -> opportunities, ...
+  event_signups       signupID PK, userID -> users, opportunityID -> ...
   notifications       notificationID PK, userID -> users, ...
 """
 
@@ -112,6 +112,7 @@ class Database:
             website_link TEXT,
             city         TEXT,
             country      TEXT,
+            source_id    TEXT,
             created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(userID) REFERENCES users(userID) ON DELETE CASCADE
         );
@@ -193,6 +194,10 @@ class Database:
         )
         self.cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_signup_opp ON event_signups(opportunityID)"
+        )
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_org_source "
+            "ON organizations(source_id) WHERE source_id IS NOT NULL"
         )
         self.connection.commit()
 
@@ -292,6 +297,28 @@ class Database:
 
         return result
 
+    def getUserProfile(self, userID):
+        """Alias for get_user_profile. Used by volunteerHome._db()."""
+        return self.get_user_profile(userID)
+
+    def updateUserProfile(self, userID, fields):
+        """Update a volunteer profile from a dict. Returns bool."""
+        return self.update_volunteer_profile(userID, **fields)
+
+    def changePassword(self, userID, old, new):
+        self.cursor.execute(
+            "SELECT password FROM users WHERE userID = ?", (userID,),
+        )
+        row = self.cursor.fetchone()
+        if not row or not verify_password(old, row["password"]):
+            return False
+        self.cursor.execute(
+            "UPDATE users SET password = ? WHERE userID = ?",
+            (hash_password(new), userID),
+        )
+        self.connection.commit()
+        return True
+
     def set_mfa_enabled(self, userID, enabled: bool):
         self.cursor.execute(
             "UPDATE users SET mfa_enabled = ? WHERE userID = ?",
@@ -318,36 +345,104 @@ class Database:
         return True
 
     # ── Organizations helpers ─────────────────────────────────────────────
+    def get_or_create_organization(self, org_name, source_id=None,
+                                   description=None, website_link=None,
+                                   city=None, country=None):
+        """
+        Look up an organization by external source_id (preferred) or by
+        name (fallback). Create it if it doesn't exist. Returns orgID or None.
+
+        Matching rules:
+          1. If source_id is provided and a row with that source_id exists,
+             reuse it.
+          2. Else if org_name matches an existing row with source_id IS NULL
+             (a Moxie-native org or a legacy row), reuse it.
+          3. Else create a new row.
+        """
+        if source_id:
+            self.cursor.execute(
+                "SELECT orgID FROM organizations WHERE source_id = ?",
+                (source_id,),
+            )
+            row = self.cursor.fetchone()
+            if row:
+                return row["orgID"]
+
+        if org_name:
+            self.cursor.execute(
+                "SELECT orgID FROM organizations "
+                "WHERE org_name = ? AND source_id IS NULL",
+                (org_name,),
+            )
+            row = self.cursor.fetchone()
+            if row:
+                return row["orgID"]
+
+        if not org_name and not source_id:
+            return None
+
+        try:
+            self.cursor.execute(
+                "INSERT INTO organizations "
+                "(userID, org_name, source_id, description, website_link, "
+                " city, country) "
+                "VALUES (NULL, ?, ?, ?, ?, ?, ?)",
+                (org_name or "Unknown organization", source_id,
+                 description, website_link, city, country),
+            )
+            self.connection.commit()
+            return self.cursor.lastrowid
+        except sqlite3.Error as e:
+            print("get_or_create_organization error:", e)
+            return None
+
     def get_or_create_external_org(self, org_name: str) -> int:
-        """
-        Returns the orgID of an organization row reserved for external
-        imports (e.g. "Volunteer Connector"). Creates it on first call.
-        External opportunities attach to this org so EventCard renders a
-        real name and orphaned orgIDs never appear.
-        """
-        self.cursor.execute(
-            "SELECT orgID FROM organizations WHERE org_name = ?",
-            (org_name,),
+        """Kept for backward compatibility. Now a thin alias."""
+        return self.get_or_create_organization(
+            org_name, description="Imported via Volunteer Connector API"
         )
-        row = self.cursor.fetchone()
-        if row:
-            return row["orgID"]
+
+    def getOrganizations(self, userID):
+        """
+        Every organization with an is_member flag for the given user.
+        Joined orgs first, then alphabetical.
+        """
+        self.cursor.execute("""
+            SELECT o.orgID AS organizationID, o.org_name AS name,
+                   o.description, o.website_link, o.city, o.country,
+                   o.source_id,
+                   CASE WHEN m.memberID IS NULL THEN 0 ELSE 1 END AS is_member
+            FROM organizations o
+            LEFT JOIN org_members m
+              ON m.orgID = o.orgID AND m.userID = ?
+            ORDER BY is_member DESC, o.org_name ASC
+        """, (userID,))
+        return self.cursor.fetchall()
+
+    def joinOrganization(self, userID, orgID):
+        try:
+            self.cursor.execute(
+                "INSERT INTO org_members (userID, orgID) VALUES (?, ?)",
+                (userID, orgID),
+            )
+            self.connection.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return True
+        except sqlite3.Error as e:
+            print("joinOrganization error:", e)
+            return False
+
+    def leaveOrganization(self, userID, orgID):
         self.cursor.execute(
-            "INSERT INTO organizations (org_name, description) VALUES (?, ?)",
-            (org_name, "Imported via Volunteer Connector API"),
+            "DELETE FROM org_members WHERE userID = ? AND orgID = ?",
+            (userID, orgID),
         )
         self.connection.commit()
-        return self.cursor.lastrowid
+        return self.cursor.rowcount > 0
 
     # ── Opportunities ─────────────────────────────────────────────────────
     def _opportunity_base_query(self):
-        """
-        Every read of an opportunity goes through here. Note the
-        COALESCE on website_link: the opportunities table has its own
-        per-event link (used by external imports and by orgs that want
-        a per-event URL) and organizations has an org-level link. We
-        prefer the event's own link and fall back to the org's.
-        """
         return """
         SELECT o.opportunityID, o.title, o.description, o.category,
                o.location, o.address, o.is_remote, o.event_date,
@@ -371,8 +466,6 @@ class Database:
         return self.cursor.fetchall()
 
     def getAllOpportunities(self):
-        """Every non-cancelled opportunity — local and external.
-        Used as the candidate pool for content-based recommendations."""
         self.cursor.execute(
             self._opportunity_base_query() +
             " WHERE COALESCE(o.status, 'open') != 'cancelled'"
@@ -543,7 +636,6 @@ class Database:
 
     # ── Signups ───────────────────────────────────────────────────────────
     def registerForOpportunity(self, userID, opportunityID):
-        """Returns 'ok', 'full', 'duplicate', or 'error'."""
         try:
             self.cursor.execute(
                 "SELECT capacity, COALESCE(status, 'open') AS status "

@@ -1,11 +1,10 @@
 """
 volunteerHome.py — Volunteer dashboard.
 
-Tabs in a QStackedWidget. There is no header of its own: the tab buttons
-live in landing.py's top nav bar (see TAB_LABELS / show_tab / tabChanged).
+Tabs in a QStackedWidget. Tab buttons live in landing.py's top nav bar
+(see TAB_LABELS / show_tab / tabChanged).
     0. Dashboard       summary of every other tab + statistics
-    1. Calendar        month view of every event the volunteer is signed up
-                       for, color-coded by organization
+    1. Calendar        month view, color-coded by organization
     2. My Events       signups with check-in / check-out / cancel
     3. Organizations   join / leave organizations
     4. Notifications   list of notifications for this user
@@ -1315,11 +1314,6 @@ class VolunteerHome(QWidget):
 
     # ── Recommendations (content-based ranking) ──────────────────────────
     def _refresh_recommendations(self, active_signups):
-        """
-        Populate the Recommended card using unsupervised content-based
-        ranking (TF-IDF + cosine similarity). Falls back gracefully if
-        scikit-learn isn't installed or the DB lacks the required method.
-        """
         self._clear_all(self.dash_recommended)
 
         try:

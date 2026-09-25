@@ -21,17 +21,17 @@ Confirmed response shape (from live API):
              "scope": "regional",
              "regions": ["Alberta"]
           }
-          or
-          "audience": {
-             "scope": "local",
-             "longitude": -113.5,
-             "latitude": 53.5
-          }
         }
       ]
     }
 
 The endpoint returns 6 results per page, with pagination via &page=N.
+
+Organizations:
+    Each opportunity is attached to a real organizations row keyed on
+    the API's organization.url (stored as organizations.source_id). The
+    org name is stored on the row too, but the source_id is the primary
+    key for dedup — two orgs with the same name won't collide.
 """
 
 import json
@@ -49,8 +49,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_FILE = os.path.join(BASE_DIR, "volunteer_cache.json")
 
 # The live endpoint honors ?cc=64 (Canada, their primary region).
-# Bare /api/search/ also works and returns all countries — we use cc=64
-# only to get a stable 567-result corpus for demo purposes.
 DEFAULT_COUNTRY_CODE = 64
 
 
@@ -92,10 +90,6 @@ def clear_cache():
 # HTTP (cache-aware)
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_page(page: int = 1, timeout: int = 10, use_cache: bool = True) -> list:
-    """
-    Fetch one page of results. Returns a list of dicts, or [] on failure.
-    The endpoint returns ~6 items per page.
-    """
     cache = _load_cache() if use_cache else {}
     key = f"page_{page}"
 
@@ -153,7 +147,6 @@ def _as_str(v, default=""):
 
 
 def _activities_to_str(activities):
-    """activities = [{"name": "Advocacy", "category": "Legal"}, ...]"""
     if not activities or not isinstance(activities, list):
         return ""
     seen = []
@@ -167,7 +160,6 @@ def _activities_to_str(activities):
 
 
 def _audience_to_str(audience):
-    """Extract a human-readable location from the audience block."""
     if not isinstance(audience, dict):
         return ""
     regions = audience.get("regions")
@@ -182,11 +174,9 @@ def _audience_to_str(audience):
 
 
 def _dates_to_str(dates):
-    """dates = 'Ongoing' or 'April 15, 2024 - April 17, 2024'."""
     if isinstance(dates, str):
         return dates.strip()
     if isinstance(dates, dict):
-        # Defensive: some responses nest a start/end
         start = dates.get("start") or dates.get("from")
         end = dates.get("end") or dates.get("to")
         if start and end:
@@ -196,29 +186,40 @@ def _dates_to_str(dates):
 
 
 def map_item(item: dict) -> dict:
-    """Map one API result to our opportunities row shape."""
+    """
+    Map one API result to our opportunities row shape, plus the extra
+    keys sync() uses to resolve the real organization.
+    """
     org = item.get("organization") or {}
     if not isinstance(org, dict):
         org = {"name": str(org)}
 
+    org_url = _as_str(org.get("url")) or None
+
     return {
-        "source_id":   f"vc:{_as_str(item.get('id'))}",
-        "title":       _as_str(item.get("title"), "Untitled opportunity"),
-        "description": _as_str(item.get("description")),
-        "category":    _activities_to_str(item.get("activities")) or "General",
-        "location":    _audience_to_str(item.get("audience")) or "See link",
-        "address":     "",
-        "is_remote":   1 if item.get("remote_or_online") else 0,
-        "event_date":  _dates_to_str(item.get("dates")),
-        "start_time":  None,
-        "end_time":    None,
-        "capacity":    None,
-        "status":      "open",
+        # opportunities columns
+        "source_id":       f"vc:{_as_str(item.get('id'))}",
+        "title":           _as_str(item.get("title"), "Untitled opportunity"),
+        "description":     _as_str(item.get("description")),
+        "category":        _activities_to_str(item.get("activities")) or "General",
+        "location":        _audience_to_str(item.get("audience")) or "See link",
+        "address":         "",
+        "is_remote":       1 if item.get("remote_or_online") else 0,
+        "event_date":      _dates_to_str(item.get("dates")),
+        "start_time":      None,
+        "end_time":        None,
+        "capacity":        None,
+        "status":          "open",
         "required_skills": _as_str(item.get("duration")) or None,
         "contact_name":    _as_str(org.get("name")),
         "contact_email":   None,
         "thumbnail":       _as_str(org.get("logo")) or None,
         "website_link":    _as_str(item.get("url")),
+
+        # extra keys for org resolution (not written to opportunities)
+        "org_name":        _as_str(org.get("name")),
+        "org_website":     org_url,
+        "org_source_id":   org_url,
     }
 
 
@@ -228,10 +229,9 @@ def map_item(item: dict) -> dict:
 def sync(db: Database, max_pages: int = 3, use_cache: bool = True) -> int:
     """
     Fetch up to max_pages pages from the API and insert any new rows.
-    Returns the number of newly inserted opportunities.
-    The endpoint returns ~6 items per page, so 3 pages ≈ 18 opportunities.
+    Each opportunity is attached to a real organizations row keyed on
+    the API's organization.url. Returns the number of new opportunities.
     """
-    org_id = db.get_or_create_external_org(EXTERNAL_ORG_NAME)
     inserted = 0
 
     for page in range(1, max_pages + 1):
@@ -242,6 +242,19 @@ def sync(db: Database, max_pages: int = 3, use_cache: bool = True) -> int:
         for item in items:
             mapped = map_item(item)
             if not mapped["source_id"] or mapped["source_id"] == "vc:":
+                continue
+
+            # Resolve the real org from the API's organization.url,
+            # falling back to a shared placeholder if the API gave us
+            # nothing usable.
+            org_id = db.get_or_create_organization(
+                mapped["org_name"] or EXTERNAL_ORG_NAME,
+                source_id=mapped.get("org_source_id"),
+                description="Imported via Volunteer Connector API",
+                website_link=mapped.get("org_website"),
+            )
+            if org_id is None:
+                print(f"[VC] Could not resolve org for {mapped['title'][:40]}")
                 continue
 
             try:
