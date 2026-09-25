@@ -12,26 +12,9 @@ live in landing.py's top nav bar (see TAB_LABELS / show_tab / tabChanged).
     5. Help            AI chatbot (Anthropic API)
     6. Profile         edit profile, notification setting, password
 
-(Browsing/signing up for events is the existing VolunteerPage, reached
-from the nav bar's "Volunteer" tab.)
-
 set_user_data(user) is called by landing.py after a successful login
 with the dict from Database.authenticate(). userID is read from
 user['userID'].
-
-New Database methods this file expects (all optional — the page shows a
-friendly message instead of crashing if one is missing):
-
-    getOrganizations(userID)          -> rows: organizationID, name,
-                                         description, is_member (0/1)
-    joinOrganization(userID, orgID)   -> bool
-    leaveOrganization(userID, orgID)  -> bool
-    getUserProfile(userID)            -> dict/row: first_name, last_name,
-                                         email, phone, notify_email
-    updateUserProfile(userID, fields) -> bool   (fields is a dict)
-    changePassword(userID, old, new)  -> bool
-
-The Help chatbot reads the ANTHROPIC_API_KEY environment variable.
 """
 
 import calendar
@@ -58,7 +41,6 @@ import theme
 # ── Constants ─────────────────────────────────────────────────────────────
 ISO = "yyyy-MM-dd"
 
-# Distinct, readable on light and dark backgrounds.
 ORG_PALETTE = [
     "#2E86DE", "#E67E22", "#27AE60", "#C0392B", "#8E44AD",
     "#16A085", "#D4AC0D", "#E84393", "#5D6D7E", "#00A8CC",
@@ -103,7 +85,7 @@ class EventCalendar(QCalendarWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.events_by_date = {}          # "YYYY-MM-DD" -> [rows]
+        self.events_by_date = {}
         self.setGridVisible(True)
         self.setVerticalHeaderFormat(
             QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
@@ -238,8 +220,6 @@ class ChatWorker(QThread):
 
 # ── Main widget ───────────────────────────────────────────────────────────
 class VolunteerHome(QWidget):
-    # Labels for the tabs. landing.py builds its top nav bar from this list,
-    # so index i here == show_tab(i).
     TAB_LABELS = [
         "Dashboard", "Calendar", "My Events", "Organizations",
         "Notifications", "Help", "Profile",
@@ -274,7 +254,7 @@ class VolunteerHome(QWidget):
 
         outer.addWidget(self._build_slogan_bar(), 0)
 
-    # ── DB access (tolerates methods you haven't written yet) ─────────────
+    # ── DB access ─────────────────────────────────────────────────────────
     def _db(self, method, *args, default=None):
         fn = getattr(self.db, method, None) if self.db else None
         if fn is None:
@@ -287,8 +267,6 @@ class VolunteerHome(QWidget):
             return default
 
     def _db_action(self, method, *args):
-        """Run a write method. Returns True on success, shows a message
-        box on failure or if the method is missing."""
         fn = getattr(self.db, method, None) if self.db else None
         if fn is None:
             QMessageBox.information(
@@ -316,9 +294,6 @@ class VolunteerHome(QWidget):
 
     # ── Reusable page scaffolding ─────────────────────────────────────────
     def _scroll_page(self, heading_text, spacing=10):
-        """Returns (page, content_layout, top_layout). The content layout
-        lives in a scroll area and ends with a stretch, so use
-        _clear() + insertWidget(count()-1, ...)."""
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(40, 20, 40, 20)
@@ -328,7 +303,7 @@ class VolunteerHome(QWidget):
         heading.setObjectName(theme.SECTION_TITLE)
         lay.addWidget(heading)
 
-        top = QVBoxLayout()   # slot for search bars etc.
+        top = QVBoxLayout()
         top.setSpacing(8)
         lay.addLayout(top)
 
@@ -346,7 +321,6 @@ class VolunteerHome(QWidget):
         return page, content_layout, top
 
     def _clear(self, layout):
-        """Remove every widget except the trailing stretch."""
         while layout.count() > 1:
             item = layout.takeAt(0)
             w = item.widget()
@@ -373,8 +347,6 @@ class VolunteerHome(QWidget):
 
     # ── 0. Dashboard ──────────────────────────────────────────────────────
     def _dash_card(self, title, link_text=None, tab=None):
-        """A titled card with an optional 'View all →' link that jumps to
-        another tab. Returns (card, body_layout)."""
         card = QFrame()
         card.setObjectName(theme.EVENT_CARD)
         v = QVBoxLayout(card)
@@ -455,7 +427,15 @@ class VolunteerHome(QWidget):
             tiles.addWidget(tile, 1)
         lay.addLayout(tiles)
 
-        # 2x2 grid of summaries, each linking to its tab
+        # Recommended for you (ML-ranked)
+        rec_card, self.dash_recommended = self._dash_card(
+            "Recommended for you", "Browse all", TAB_DASHBOARD
+        )
+        rec_wrap = QGridLayout()
+        rec_wrap.addWidget(rec_card, 0, 0)
+        lay.addLayout(rec_wrap)
+
+        # 2x2 grid of summaries
         grid = QGridLayout()
         grid.setSpacing(16)
         grid.setColumnStretch(0, 1)
@@ -483,7 +463,6 @@ class VolunteerHome(QWidget):
             "Recent notifications", "View all", TAB_NOTIFS)
         lay.addWidget(card)
 
-        # Help nudge
         help_card = QFrame()
         help_card.setObjectName(theme.EVENT_CARD)
         hl = QHBoxLayout(help_card)
@@ -517,7 +496,6 @@ class VolunteerHome(QWidget):
         body = QHBoxLayout()
         body.setSpacing(20)
 
-        # Left: calendar + legend
         left = QVBoxLayout()
         self.calendar = EventCalendar()
         self.calendar.selectionChanged.connect(self._refresh_day_list)
@@ -527,7 +505,6 @@ class VolunteerHome(QWidget):
         self.legend_layout.setSpacing(14)
         left.addLayout(self.legend_layout)
 
-        # Right: events on the selected day
         right = QVBoxLayout()
         self.day_heading = QLabel("")
         self.day_heading.setObjectName(theme.SECTION_TITLE)
@@ -566,7 +543,6 @@ class VolunteerHome(QWidget):
             orgs[name] = org_color(rget(r, "org_name"))
         self.calendar.set_events(by_date)
 
-        # Legend
         while self.legend_layout.count():
             item = self.legend_layout.takeAt(0)
             if item.widget():
@@ -715,7 +691,7 @@ class VolunteerHome(QWidget):
         self._refresh_events()
         self._refresh_dashboard()
 
-    # ── 4. Organizations ──────────────────────────────────────────────────
+    # ── 3. Organizations ──────────────────────────────────────────────────
     def _build_orgs_page(self):
         page, self.orgs_layout, top = self._scroll_page("Organizations")
         self.orgs_search = QLineEdit()
@@ -750,7 +726,6 @@ class VolunteerHome(QWidget):
                 else "No organizations available yet."
             )
             return
-        # Joined orgs first, then alphabetical
         rows.sort(key=lambda r: (not rget(r, "is_member", 0),
                                  str(rget(r, "name", "")).lower()))
         for r in rows:
@@ -816,7 +791,7 @@ class VolunteerHome(QWidget):
         if self._db_action("leaveOrganization", self.userID, orgID):
             self._refresh_orgs()
 
-    # ── 5. Notifications ──────────────────────────────────────────────────
+    # ── 4. Notifications ──────────────────────────────────────────────────
     def _build_notifications_page(self):
         page, self.notif_layout, _ = self._scroll_page(
             "Notifications", spacing=8
@@ -841,7 +816,7 @@ class VolunteerHome(QWidget):
             lbl.setWordWrap(True)
             self._add(self.notif_layout, lbl)
 
-    # ── 6. Help (AI chatbot) ──────────────────────────────────────────────
+    # ── 5. Help ───────────────────────────────────────────────────────────
     def _build_help_page(self):
         page = QWidget()
         lay = QVBoxLayout(page)
@@ -937,7 +912,6 @@ class VolunteerHome(QWidget):
         self._chat_append("You", text)
         self._chat_history.append({"role": "user", "content": text})
         self._chat_history = self._chat_history[-20:]
-        # The API requires the first message to be from the user.
         while self._chat_history and self._chat_history[0]["role"] != "user":
             self._chat_history.pop(0)
 
@@ -955,7 +929,6 @@ class VolunteerHome(QWidget):
         self._set_chat_busy(False)
 
     def _on_chat_failed(self, msg):
-        # Drop the unanswered user turn so history stays alternating.
         if self._chat_history and self._chat_history[-1]["role"] == "user":
             self._chat_history.pop()
         self._chat_append("Assistant", msg)
@@ -968,7 +941,7 @@ class VolunteerHome(QWidget):
         if not busy:
             self.chat_input.setFocus()
 
-    # ── 7. Profile & settings ─────────────────────────────────────────────
+    # ── 6. Profile ────────────────────────────────────────────────────────
     def _build_profile_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
@@ -988,7 +961,6 @@ class VolunteerHome(QWidget):
         inner_lay.setContentsMargins(0, 0, 0, 0)
         inner_lay.setSpacing(16)
 
-        # Details card
         details = QFrame()
         details.setObjectName(theme.EVENT_CARD)
         dl = QVBoxLayout(details)
@@ -1025,7 +997,6 @@ class VolunteerHome(QWidget):
         dl.addLayout(save_row)
         inner_lay.addWidget(details)
 
-        # Password card
         pw = QFrame()
         pw.setObjectName(theme.EVENT_CARD)
         pl = QVBoxLayout(pw)
@@ -1123,7 +1094,7 @@ class VolunteerHome(QWidget):
                 "Couldn't update password. Check your current password."
             )
 
-    # ── Tab switching (driven by the nav bar in landing.py) ───────────────
+    # ── Tab switching ─────────────────────────────────────────────────────
     def current_tab(self):
         return self.stack.currentIndex()
 
@@ -1144,7 +1115,6 @@ class VolunteerHome(QWidget):
 
     # ── User data ─────────────────────────────────────────────────────────
     def set_user_data(self, user_data):
-        """Called by landing.py after login. user_data is a dict."""
         self.user_data = user_data
         if not user_data:
             return
@@ -1156,7 +1126,6 @@ class VolunteerHome(QWidget):
         self.welcome_title.setText(f"Welcome, {first_name}!")
         self.user_info_label.setText(f"Logged in as: {email}")
 
-        # Fresh session: reset per-user state
         self._chat_history = []
         self._chat_reset_view()
         self._signup_rows = []
@@ -1206,7 +1175,7 @@ class VolunteerHome(QWidget):
 
         rows = self._db("getSignupsForVolunteer", self.userID, default=[]) or []
         active = [r for r in rows if (rget(r, "status", "") or "") != "cancelled"]
-        self._signup_rows = active            # also feeds the Help chatbot
+        self._signup_rows = active
 
         today = date.today()
         today_s = today.isoformat()
@@ -1227,8 +1196,6 @@ class VolunteerHome(QWidget):
         past_done = [r for r in past if rget(r, "check_out_time")]
         total_hours = sum(hrs(r) for r in active)
 
-        # Organizations: real memberships if the DB can tell us, otherwise
-        # whichever organizations the volunteer's events belong to.
         org_rows = self._db("getOrganizations", self.userID, default=None)
         if org_rows is not None:
             joined = sorted(
@@ -1239,7 +1206,6 @@ class VolunteerHome(QWidget):
             joined = sorted({rget(r, "org_name") for r in active
                              if rget(r, "org_name")})
 
-        # Stat tiles
         self.tile_values["hours"].setText(f"{total_hours:.1f}")
         self.tile_values["completed"].setText(str(len(completed)))
         self.tile_values["upcoming"].setText(str(len(upcoming)))
@@ -1249,7 +1215,10 @@ class VolunteerHome(QWidget):
             f"{round(100 * len(past_done) / len(past))}%" if past else "—"
         )
 
-        # Upcoming events (→ Calendar)
+        # Recommendations (ML-ranked)
+        self._refresh_recommendations(active)
+
+        # Upcoming events
         if not upcoming:
             self.dash_upcoming.addWidget(self._dash_text(
                 "Nothing coming up — find events in the Volunteer tab."))
@@ -1264,7 +1233,7 @@ class VolunteerHome(QWidget):
             self.dash_upcoming.addWidget(
                 self._dash_text(f"+ {len(upcoming) - 4} more"))
 
-        # Hours by month, last 6 months
+        # Hours by month
         totals = {}
         for r in active:
             totals[day(r)[:7]] = totals.get(day(r)[:7], 0.0) + hrs(r)
@@ -1278,7 +1247,7 @@ class VolunteerHome(QWidget):
                          totals.get(f"{yy:04d}-{mm:02d}", 0.0)))
         self.dash_chart.set_data(data)
 
-        # Hours by organization (→ My Events)
+        # Hours by organization
         by_org = {}
         for r in active:
             name = rget(r, "org_name") or "Independent"
@@ -1315,7 +1284,7 @@ class VolunteerHome(QWidget):
             h.addWidget(hv)
             self.dash_org_hours.addWidget(row)
 
-        # My organizations (→ Organizations)
+        # My organizations
         if not joined:
             self.dash_orgs.addWidget(self._dash_text(
                 "You haven't joined any organizations yet."))
@@ -1325,7 +1294,7 @@ class VolunteerHome(QWidget):
             self.dash_orgs.addWidget(
                 self._dash_text(f"+ {len(joined) - 6} more"))
 
-        # Recent notifications (→ Notifications)
+        # Recent notifications
         notifs = self._db("getNotifications", self.userID, default=[]) or []
         notifs = sorted(notifs, key=lambda r: str(rget(r, "created_at", "")),
                         reverse=True)[:3]
@@ -1343,3 +1312,56 @@ class VolunteerHome(QWidget):
         for lay in (self.dash_upcoming, self.dash_org_hours,
                     self.dash_orgs, self.dash_notifs):
             lay.addStretch(1)
+
+    # ── Recommendations (content-based ranking) ──────────────────────────
+    def _refresh_recommendations(self, active_signups):
+        """
+        Populate the Recommended card using unsupervised content-based
+        ranking (TF-IDF + cosine similarity). Falls back gracefully if
+        scikit-learn isn't installed or the DB lacks the required method.
+        """
+        self._clear_all(self.dash_recommended)
+
+        try:
+            from ml_recommender import rank_opportunities
+        except ImportError:
+            self.dash_recommended.addWidget(self._dash_text(
+                "Recommendations need scikit-learn. "
+                "Run: pip install scikit-learn"
+            ))
+            return
+
+        all_opps = self._db("getAllOpportunities", default=None)
+        if all_opps is None:
+            self.dash_recommended.addWidget(self._dash_text(
+                "Add Database.getAllOpportunities() to enable recommendations."
+            ))
+            return
+
+        user_profile = self._db("getUserProfile", self.userID) or self.user_data
+        joined_orgs = self._db("getOrganizations", self.userID, default=[]) or []
+
+        recs, scores = rank_opportunities(
+            user_profile, active_signups, joined_orgs,
+            list(all_opps), top_n=5,
+        )
+
+        if not recs:
+            self.dash_recommended.addWidget(self._dash_text(
+                "No new recommendations right now. "
+                "Browse the Volunteer tab to find events."
+            ))
+            return
+
+        for r, s in zip(recs, scores):
+            sub = (
+                f"{rget(r, 'event_date', 'TBD')}{time_range(r)} · "
+                f"{rget(r, 'org_name', 'Independent')}"
+            )
+            if s > 0:
+                sub += f" · match {int(round(s * 100))}%"
+            self.dash_recommended.addWidget(self._dash_row(
+                org_color(rget(r, "org_name")),
+                str(rget(r, "title", "Untitled event")),
+                sub,
+            ))

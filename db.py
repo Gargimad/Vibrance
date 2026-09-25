@@ -10,14 +10,9 @@ Schema (new):
                       website_link, city, country, created_at
   org_members         memberID PK, userID -> users, orgID -> organizations,
                       member_role
-  opportunities       opportunityID PK, orgID -> organizations, ... (unchanged)
+  opportunities       opportunityID PK, orgID -> organizations, ...
   event_signups       signupID PK, userID -> users, opportunityID -> opportunities, ...
   notifications       notificationID PK, userID -> users, ...
-
-If you have an existing Volunteer.db built on the old schema
-(volunteers / organizations-with-passwords / event_signups.volunteerID),
-run migrate.py once. After migration the old tables are renamed to
-*_legacy_backup so you can inspect them if something goes wrong.
 """
 
 import os
@@ -49,13 +44,11 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, stored: str) -> bool:
     if not stored:
         return False
-    # bcrypt
     if stored.startswith("$2") and _HAS_BCRYPT:
         try:
             return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("utf-8"))
         except ValueError:
             return False
-    # pbkdf2
     if stored.startswith("pbkdf2$"):
         try:
             _, salt_hex, dk_hex = stored.split("$")
@@ -65,7 +58,6 @@ def verify_password(plain: str, stored: str) -> bool:
             return dk == expected
         except (ValueError, AttributeError):
             return False
-    # legacy plaintext — only reachable for pre-migration rows
     return plain == stored
 
 
@@ -158,6 +150,8 @@ class Database:
             created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
             thumbnail       TEXT,
+            website_link    TEXT,
+            source_id       TEXT,
             FOREIGN KEY(orgID) REFERENCES organizations(orgID) ON DELETE CASCADE
         );
         """)
@@ -204,21 +198,12 @@ class Database:
 
     # ── Users / auth ──────────────────────────────────────────────────────
     def register_user(self, email, password, role, **profile):
-        """
-        Create a user + role-specific profile row. Returns the new userID,
-        or None if the email already exists / role is invalid.
-
-        role='volunteer' reads:  first_name, last_name, country, zipcode,
-                                 dob, gender, skills, phone
-        role='org'       reads:  org_name, description, website_link,
-                                 city, country
-        """
         if role not in ("volunteer", "org"):
             return None
         try:
             self.cursor.execute(
                 "INSERT INTO users (email, password, role, email_verified) "
-                "VALUES (?, ?, ?, 1)",  # email is verified by the OTP step before this call
+                "VALUES (?, ?, ?, 1)",
                 (email.strip().lower(), hash_password(password), role),
             )
             userID = self.cursor.lastrowid
@@ -240,7 +225,7 @@ class Database:
                     profile.get("skills", ""),
                     profile.get("phone", ""),
                 ))
-            else:  # org
+            else:
                 self.cursor.execute("""
                     INSERT INTO organizations
                     (userID, org_name, description, website_link, city, country)
@@ -266,14 +251,6 @@ class Database:
         return self.cursor.fetchone() is not None
 
     def authenticate(self, email, password):
-        """
-        Returns a dict with user info + role-specific profile, or None.
-        Keys always include: userID, email, role, mfa_enabled.
-        Volunteer adds: first_name, last_name, country, zipcode, dob,
-                        gender, skills, phone
-        Org adds:       orgID, org_name, description, website_link,
-                        city, country
-        """
         self.cursor.execute(
             "SELECT userID, email, password, role, email_verified, mfa_enabled "
             "FROM users WHERE email = ?",
@@ -340,15 +317,45 @@ class Database:
         self.connection.commit()
         return True
 
+    # ── Organizations helpers ─────────────────────────────────────────────
+    def get_or_create_external_org(self, org_name: str) -> int:
+        """
+        Returns the orgID of an organization row reserved for external
+        imports (e.g. "Volunteer Connector"). Creates it on first call.
+        External opportunities attach to this org so EventCard renders a
+        real name and orphaned orgIDs never appear.
+        """
+        self.cursor.execute(
+            "SELECT orgID FROM organizations WHERE org_name = ?",
+            (org_name,),
+        )
+        row = self.cursor.fetchone()
+        if row:
+            return row["orgID"]
+        self.cursor.execute(
+            "INSERT INTO organizations (org_name, description) VALUES (?, ?)",
+            (org_name, "Imported via Volunteer Connector API"),
+        )
+        self.connection.commit()
+        return self.cursor.lastrowid
+
     # ── Opportunities ─────────────────────────────────────────────────────
     def _opportunity_base_query(self):
+        """
+        Every read of an opportunity goes through here. Note the
+        COALESCE on website_link: the opportunities table has its own
+        per-event link (used by external imports and by orgs that want
+        a per-event URL) and organizations has an org-level link. We
+        prefer the event's own link and fall back to the org's.
+        """
         return """
         SELECT o.opportunityID, o.title, o.description, o.category,
                o.location, o.address, o.is_remote, o.event_date,
                o.start_time, o.end_time, o.capacity, o.status,
                o.required_skills, o.contact_name, o.contact_email,
-               o.created_at, o.updated_at, o.thumbnail,
-               org.org_name, org.website_link, org.orgID,
+               o.created_at, o.updated_at, o.thumbnail, o.source_id,
+               COALESCE(o.website_link, org.website_link) AS website_link,
+               org.org_name, org.orgID,
                (SELECT COUNT(*) FROM event_signups s
                 WHERE s.opportunityID = o.opportunityID
                   AND s.status = 'registered') AS registered_count
@@ -360,6 +367,15 @@ class Database:
         self.cursor.execute(
             self._opportunity_base_query() +
             " ORDER BY o.event_date ASC LIMIT ?", (limit,),
+        )
+        return self.cursor.fetchall()
+
+    def getAllOpportunities(self):
+        """Every non-cancelled opportunity — local and external.
+        Used as the candidate pool for content-based recommendations."""
+        self.cursor.execute(
+            self._opportunity_base_query() +
+            " WHERE COALESCE(o.status, 'open') != 'cancelled'"
         )
         return self.cursor.fetchall()
 
@@ -475,19 +491,21 @@ class Database:
                        is_remote, event_date, thumbnail=None,
                        start_time=None, end_time=None, capacity=None,
                        status="open", required_skills=None,
-                       contact_name=None, contact_email=None, address=None):
+                       contact_name=None, contact_email=None, address=None,
+                       website_link=None):
         try:
             self.cursor.execute("""
                 INSERT INTO opportunities
                 (orgID, title, description, category, location, address,
                  is_remote, event_date, start_time, end_time, capacity,
-                 status, required_skills, contact_name, contact_email, thumbnail)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, required_skills, contact_name, contact_email,
+                 thumbnail, website_link)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 orgID, title, description, category, location, address,
                 1 if is_remote else 0, event_date, start_time, end_time,
                 capacity, status, required_skills, contact_name,
-                contact_email, thumbnail,
+                contact_email, thumbnail, website_link,
             ))
             self.connection.commit()
             return self.cursor.lastrowid
@@ -499,7 +517,7 @@ class Database:
         allowed = {"title", "description", "category", "location", "address",
                    "is_remote", "event_date", "start_time", "end_time",
                    "capacity", "status", "required_skills", "contact_name",
-                   "contact_email", "thumbnail"}
+                   "contact_email", "thumbnail", "website_link"}
         sets, params = [], []
         for k, v in fields.items():
             if k not in allowed:
@@ -591,7 +609,8 @@ class Database:
     def getSignupsForVolunteer(self, userID):
         self.cursor.execute("""
             SELECT s.*, o.title, o.event_date, o.start_time, o.end_time,
-                   o.location, o.is_remote, org.org_name
+                   o.location, o.is_remote, o.category,
+                   o.required_skills, org.org_name
             FROM event_signups s
             JOIN opportunities o ON s.opportunityID = o.opportunityID
             LEFT JOIN organizations org ON o.orgID = org.orgID

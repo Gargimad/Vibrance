@@ -7,65 +7,156 @@ renders it in one of two modes:
     "grid"  — fixed 300×465 tile for the grid view and home carousels
     "list"  — horizontal row for the list view
 
-Metadata shown on every card:
-    • date + start–end time
-    • spots (registered_count / capacity, when capacity is set)
-    • category, location/remote, status badges
-    • org name
-    • RSVP button (disabled when full/cancelled) and external link button
+Thumbnails:
+    The `thumbnail` column may contain either
+      • a local file path ("assets/foo.png"), or
+      • an HTTP(S) URL ("https://.../logo.png")
+    URLs are downloaded once, cached on disk in a `.thumb_cache` folder,
+    then loaded from disk on subsequent renders.
+
+    Images are fit-and-letterboxed (KeepAspectRatio, centered) so entire
+    logos are visible regardless of aspect ratio. The empty margins show
+    the EventThumb background from the active QSS theme.
 """
 
+import hashlib
 import os
+import urllib.request
+import urllib.error
+
 from PyQt6.QtCore import Qt, QByteArray, pyqtSignal
-from PyQt6.QtGui import QPixmap, QCursor
+from PyQt6.QtGui import QPixmap, QCursor, QPainter
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
 )
 
 import theme
 
-# Thumbnail fallback — mirrors the path scheme in theme.asset()
+# Fallback for missing/broken images
 FALLBACK_IMAGE = theme.asset("noThumbnail.png")
 
-# Small in-memory cache so re-filtering doesn't re-decode every image.
+# Where downloaded thumbnails are cached on disk.
+THUMB_CACHE_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".thumb_cache"
+)
+
+# In-memory LRU so we don't re-decode the same image on every repaint.
 _PIXMAP_CACHE = {}
 _PIXMAP_CACHE_LIMIT = 300
 
+USER_AGENT = "Moxie/1.0"
+
 
 def clear_thumbnail_cache():
-    """Call after an org edits/replaces a thumbnail so the next render
-    picks up the new bytes."""
+    """Clear the in-memory cache. Call after an org edits a thumbnail."""
     _PIXMAP_CACHE.clear()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# URL → bytes, with disk cache
+# ─────────────────────────────────────────────────────────────────────────────
+def _cache_path_for(url: str) -> str:
+    """Stable filename per URL so cache hits survive across runs."""
+    h = hashlib.sha1(url.encode("utf-8")).hexdigest()
+    ext = os.path.splitext(url.split("?")[0])[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"):
+        ext = ".img"
+    return os.path.join(THUMB_CACHE_DIR, h + ext)
+
+
+def _fetch_remote_bytes(url: str, timeout: int = 8) -> bytes:
+    """
+    Download the image at `url`, caching to disk. Returns raw bytes or b"".
+    Never raises — network problems just return empty and the card falls
+    back to the placeholder.
+    """
+    os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
+    cache_path = _cache_path_for(url)
+
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "rb") as f:
+                return f.read()
+        except OSError:
+            pass
+
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
+        print(f"[thumb] fetch failed for {url[:60]}: {e}")
+        return b""
+
+    try:
+        with open(cache_path, "wb") as f:
+            f.write(data)
+    except OSError as e:
+        print(f"[thumb] cache write failed: {e}")
+
+    return data
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Thumbnail loader (path string, URL, or raw bytes)
+# ─────────────────────────────────────────────────────────────────────────────
+def _fit_centered(pixmap, width, height):
+    """
+    Scale the pixmap to fit entirely inside (width, height) and center it
+    on a transparent canvas of exactly that size. Nothing is cropped.
+    """
+    scaled = pixmap.scaled(
+        width, height,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    canvas = QPixmap(width, height)
+    canvas.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(canvas)
+    painter.drawPixmap(
+        (width - scaled.width()) // 2,
+        (height - scaled.height()) // 2,
+        scaled,
+    )
+    painter.end()
+    return canvas
 
 
 def load_thumbnail_pixmap(blob, width, height, key=None):
     """
-    blob: either a path string (column holds a filename) or raw bytes.
-    Returns a QPixmap cover-cropped to (width, height), or None on failure.
+    blob: one of
+      • None / "" — falls back to placeholder
+      • a local file path
+      • an http(s) URL
+      • raw image bytes (from a BLOB column)
+    Returns a fit-and-centered QPixmap or None.
     """
     cache_key = (key, width, height) if key is not None else None
     if cache_key and cache_key in _PIXMAP_CACHE:
         return _PIXMAP_CACHE[cache_key]
 
     pixmap = QPixmap()
+
     if isinstance(blob, str) and blob:
-        pixmap = QPixmap(blob)
-    elif blob:
-        pixmap.loadFromData(QByteArray(blob))
+        if blob.startswith("http://") or blob.startswith("https://"):
+            data = _fetch_remote_bytes(blob)
+            if data:
+                pixmap.loadFromData(QByteArray(data))
+        elif blob.startswith("//"):
+            data = _fetch_remote_bytes("https:" + blob)
+            if data:
+                pixmap.loadFromData(QByteArray(data))
+        else:
+            pixmap = QPixmap(blob)
+    elif isinstance(blob, (bytes, bytearray)) and blob:
+        pixmap.loadFromData(QByteArray(bytes(blob)))
 
     if pixmap.isNull() and os.path.exists(FALLBACK_IMAGE):
         pixmap = QPixmap(FALLBACK_IMAGE)
     if pixmap.isNull():
         return None
 
-    scaled = pixmap.scaled(
-        width, height,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-        Qt.TransformationMode.SmoothTransformation,
-    )
-    x = (scaled.width() - width) // 2
-    y = (scaled.height() - height) // 2
-    result = scaled.copy(x, y, width, height)
+    result = _fit_centered(pixmap, width, height)
 
     if cache_key:
         if len(_PIXMAP_CACHE) >= _PIXMAP_CACHE_LIMIT:
@@ -124,9 +215,9 @@ def make_meta_row(key, value):
 
 
 class EventCard(QFrame):
-    openLinkRequested = pyqtSignal(str)     # external website URL
-    rsvpRequested = pyqtSignal(int)         # opportunityID
-    detailsRequested = pyqtSignal(object)   # the card itself
+    openLinkRequested = pyqtSignal(str)
+    rsvpRequested = pyqtSignal(int)
+    detailsRequested = pyqtSignal(object)
 
     GRID_WIDTH = 300
     GRID_THUMB_H = 150
@@ -170,8 +261,6 @@ class EventCard(QFrame):
         except (TypeError, ValueError):
             self.registered_count = 0
 
-        # Derive "full" from capacity so an org doesn't have to flip the
-        # status by hand after the last spot goes.
         if (self.status == "open" and self.capacity
                 and self.registered_count >= self.capacity):
             self.status = "full"
@@ -231,8 +320,6 @@ class EventCard(QFrame):
         btn.setObjectName(theme.EVENT_RSVP_BTN)
         btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         if self.status == "open":
-            # Stay clickable when logged out so the page can show the
-            # login prompt; a greyed-out button gives no feedback.
             btn.setEnabled(True)
             btn.setToolTip(
                 "RSVP for this event" if self.current_volunteer_id
@@ -378,7 +465,6 @@ class EventCard(QFrame):
             self.rsvpRequested.emit(self.opportunityID)
 
     def mouseReleaseEvent(self, event):
-        # Buttons consume their own clicks; anything else opens the dialog.
         if (event.button() == Qt.MouseButton.LeftButton
                 and self.rect().contains(event.position().toPoint())):
             self.detailsRequested.emit(self)

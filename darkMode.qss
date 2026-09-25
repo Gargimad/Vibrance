@@ -730,7 +730,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
 }
 
 #EventThumb {
-    background-color: #26152F;
+    background-color: #EFF1F4;
     border: none;
     color: #A091A8;
     font-size: 12px;
