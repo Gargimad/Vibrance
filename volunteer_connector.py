@@ -2,40 +2,19 @@
 volunteer_connector.py — Pull opportunities from the Volunteer Connector
 public API into Moxie's local database.
 
-Confirmed response shape (from live API):
-    {
-      "count": 1162,
-      "next": "...",
-      "results": [
-        {
-          "id": 48884,
-          "url": "https://...",
-          "title": "...",
-          "description": "Project Overview\r\n...",
-          "remote_or_online": false,
-          "organization": {"name": "...", "logo": "...", "url": "..."},
-          "activities": [{"name": "Advocacy", "category": "Legal"}, ...],
-          "dates": "Ongoing" | "April 15, 2024 - April 17, 2024",
-          "duration": null | "2-4 hours",
-          "audience": {
-             "scope": "regional",
-             "regions": ["Alberta"]
-          }
-        }
-      ]
-    }
+Multi-day events: the API's `dates` field is free-text. We parse the
+first date as event_date and the last date as event_end_date, both in
+ISO YYYY-MM-DD form. If parsing fails, the raw string is stored in
+event_date and event_end_date is left NULL.
 
-The endpoint returns 6 results per page, with pagination via &page=N.
-
-Organizations:
-    Each opportunity is attached to a real organizations row keyed on
-    the API's organization.url (stored as organizations.source_id). The
-    org name is stored on the row too, but the source_id is the primary
-    key for dedup — two orgs with the same name won't collide.
+Organizations: each opportunity is attached to a real organizations row
+keyed on the API's organization.url (stored as organizations.source_id).
 """
 
 import json
 import os
+import re
+from datetime import datetime
 from urllib import request, error
 
 from db import Database
@@ -48,7 +27,6 @@ USER_AGENT = "Moxie/1.0 (+https://example.org/moxie)"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_FILE = os.path.join(BASE_DIR, "volunteer_cache.json")
 
-# The live endpoint honors ?cc=64 (Canada, their primary region).
 DEFAULT_COUNTRY_CODE = 64
 
 
@@ -133,6 +111,18 @@ def fetch_page(page: int = 1, timeout: int = 10, use_cache: bool = True) -> list
 # ─────────────────────────────────────────────────────────────────────────────
 # Field extractors
 # ─────────────────────────────────────────────────────────────────────────────
+_MONTHS = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11,
+    "december": 12, "dec": 12,
+}
+
+_DATE_PATTERN = re.compile(r"([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})")
+_ISO_PATTERN = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+
+
 def _as_str(v, default=""):
     if v is None:
         return default
@@ -173,28 +163,59 @@ def _audience_to_str(audience):
     return ""
 
 
-def _dates_to_str(dates):
-    if isinstance(dates, str):
-        return dates.strip()
-    if isinstance(dates, dict):
-        start = dates.get("start") or dates.get("from")
-        end = dates.get("end") or dates.get("to")
-        if start and end:
-            return f"{start} - {end}"
-        return str(start or end or "")
-    return ""
+def _human_match_to_iso(match):
+    month_name, day, year = match
+    month = _MONTHS.get(month_name.lower())
+    if not month:
+        return ""
+    try:
+        return datetime(int(year), month, int(day)).strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
+
+
+def _date_range_to_iso(dates):
+    """
+    Parse the free-text `dates` field into (start_iso, end_iso).
+    Both may be "" if nothing parseable was found.
+
+    Examples:
+        "Ongoing"                                 -> ("", "")
+        "April 15, 2024"                          -> ("2024-04-15", "2024-04-15")
+        "April 15, 2024 - April 17, 2024"         -> ("2024-04-15", "2024-04-17")
+        "September 1, 2026 - December 15, 2026"   -> ("2026-09-01", "2026-12-15")
+        "2026-09-01 - 2026-12-15"                 -> ("2026-09-01", "2026-12-15")
+    """
+    if not isinstance(dates, str) or not dates.strip():
+        return "", ""
+
+    s = dates.strip()
+
+    # ISO range
+    iso_matches = _ISO_PATTERN.findall(s)
+    if iso_matches:
+        start = "-".join(iso_matches[0])
+        end = "-".join(iso_matches[-1])
+        return start, end
+
+    # "Month Day, Year" occurrences
+    human_matches = _DATE_PATTERN.findall(s)
+    if human_matches:
+        start = _human_match_to_iso(human_matches[0])
+        end = _human_match_to_iso(human_matches[-1])
+        return start, end
+
+    return "", ""
 
 
 def map_item(item: dict) -> dict:
-    """
-    Map one API result to our opportunities row shape, plus the extra
-    keys sync() uses to resolve the real organization.
-    """
     org = item.get("organization") or {}
     if not isinstance(org, dict):
         org = {"name": str(org)}
 
     org_url = _as_str(org.get("url")) or None
+    start_iso, end_iso = _date_range_to_iso(item.get("dates"))
+    raw_dates = _as_str(item.get("dates"))
 
     return {
         # opportunities columns
@@ -205,7 +226,8 @@ def map_item(item: dict) -> dict:
         "location":        _audience_to_str(item.get("audience")) or "See link",
         "address":         "",
         "is_remote":       1 if item.get("remote_or_online") else 0,
-        "event_date":      _dates_to_str(item.get("dates")),
+        "event_date":      start_iso or raw_dates,
+        "event_end_date":  end_iso or start_iso or None,
         "start_time":      None,
         "end_time":        None,
         "capacity":        None,
@@ -216,7 +238,7 @@ def map_item(item: dict) -> dict:
         "thumbnail":       _as_str(org.get("logo")) or None,
         "website_link":    _as_str(item.get("url")),
 
-        # extra keys for org resolution (not written to opportunities)
+        # extra keys for org resolution
         "org_name":        _as_str(org.get("name")),
         "org_website":     org_url,
         "org_source_id":   org_url,
@@ -227,11 +249,6 @@ def map_item(item: dict) -> dict:
 # Sync
 # ─────────────────────────────────────────────────────────────────────────────
 def sync(db: Database, max_pages: int = 3, use_cache: bool = True) -> int:
-    """
-    Fetch up to max_pages pages from the API and insert any new rows.
-    Each opportunity is attached to a real organizations row keyed on
-    the API's organization.url. Returns the number of new opportunities.
-    """
     inserted = 0
 
     for page in range(1, max_pages + 1):
@@ -244,9 +261,6 @@ def sync(db: Database, max_pages: int = 3, use_cache: bool = True) -> int:
             if not mapped["source_id"] or mapped["source_id"] == "vc:":
                 continue
 
-            # Resolve the real org from the API's organization.url,
-            # falling back to a shared placeholder if the API gave us
-            # nothing usable.
             org_id = db.get_or_create_organization(
                 mapped["org_name"] or EXTERNAL_ORG_NAME,
                 source_id=mapped.get("org_source_id"),
@@ -262,10 +276,11 @@ def sync(db: Database, max_pages: int = 3, use_cache: bool = True) -> int:
                     """
                     INSERT INTO opportunities
                     (orgID, title, description, category, location, address,
-                     is_remote, event_date, start_time, end_time, capacity,
+                     is_remote, event_date, event_end_date,
+                     start_time, end_time, capacity,
                      status, required_skills, contact_name, contact_email,
                      thumbnail, website_link, source_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         org_id,
@@ -276,6 +291,7 @@ def sync(db: Database, max_pages: int = 3, use_cache: bool = True) -> int:
                         mapped["address"],
                         mapped["is_remote"],
                         mapped["event_date"],
+                        mapped["event_end_date"],
                         mapped["start_time"],
                         mapped["end_time"],
                         mapped["capacity"],

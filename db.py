@@ -8,11 +8,13 @@ Schema:
                       zipcode, dob, gender, skills, phone
   organizations       orgID PK, userID (nullable for external imports),
                       org_name, description, website_link, city, country,
-                      source_id (external key, e.g. Volunteer Connector URL)
+                      source_id (external key)
   org_members         memberID PK, userID -> users, orgID -> organizations
   opportunities       opportunityID PK, orgID -> organizations, ...
+                      event_date (start), event_end_date (optional)
   event_signups       signupID PK, userID -> users, opportunityID -> ...
   notifications       notificationID PK, userID -> users, ...
+  user_org_colors     userID, orgID, color (per-user calendar overrides)
 """
 
 import os
@@ -141,6 +143,7 @@ class Database:
             address         TEXT,
             is_remote       INTEGER DEFAULT 0,
             event_date      TEXT,
+            event_end_date  TEXT,
             start_time      TEXT,
             end_time        TEXT,
             capacity        INTEGER,
@@ -183,6 +186,17 @@ class Database:
             created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
             read_at               TEXT,
             FOREIGN KEY(userID) REFERENCES users(userID) ON DELETE CASCADE
+        );
+        """)
+
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_org_colors (
+            userID  INTEGER NOT NULL,
+            orgID   INTEGER NOT NULL,
+            color   TEXT NOT NULL,
+            PRIMARY KEY (userID, orgID),
+            FOREIGN KEY(userID) REFERENCES users(userID) ON DELETE CASCADE,
+            FOREIGN KEY(orgID) REFERENCES organizations(orgID) ON DELETE CASCADE
         );
         """)
 
@@ -298,11 +312,9 @@ class Database:
         return result
 
     def getUserProfile(self, userID):
-        """Alias for get_user_profile. Used by volunteerHome._db()."""
         return self.get_user_profile(userID)
 
     def updateUserProfile(self, userID, fields):
-        """Update a volunteer profile from a dict. Returns bool."""
         return self.update_volunteer_profile(userID, **fields)
 
     def changePassword(self, userID, old, new):
@@ -348,17 +360,6 @@ class Database:
     def get_or_create_organization(self, org_name, source_id=None,
                                    description=None, website_link=None,
                                    city=None, country=None):
-        """
-        Look up an organization by external source_id (preferred) or by
-        name (fallback). Create it if it doesn't exist. Returns orgID or None.
-
-        Matching rules:
-          1. If source_id is provided and a row with that source_id exists,
-             reuse it.
-          2. Else if org_name matches an existing row with source_id IS NULL
-             (a Moxie-native org or a legacy row), reuse it.
-          3. Else create a new row.
-        """
         if source_id:
             self.cursor.execute(
                 "SELECT orgID FROM organizations WHERE source_id = ?",
@@ -397,16 +398,11 @@ class Database:
             return None
 
     def get_or_create_external_org(self, org_name: str) -> int:
-        """Kept for backward compatibility. Now a thin alias."""
         return self.get_or_create_organization(
             org_name, description="Imported via Volunteer Connector API"
         )
 
     def getOrganizations(self, userID):
-        """
-        Every organization with an is_member flag for the given user.
-        Joined orgs first, then alphabetical.
-        """
         self.cursor.execute("""
             SELECT o.orgID AS organizationID, o.org_name AS name,
                    o.description, o.website_link, o.city, o.country,
@@ -441,11 +437,41 @@ class Database:
         self.connection.commit()
         return self.cursor.rowcount > 0
 
+    # ── Per-user org colors ───────────────────────────────────────────────
+    def getUserOrgColors(self, userID):
+        self.cursor.execute(
+            "SELECT orgID, color FROM user_org_colors WHERE userID = ?",
+            (userID,),
+        )
+        return {r["orgID"]: r["color"] for r in self.cursor.fetchall()}
+
+    def setUserOrgColor(self, userID, orgID, color):
+        try:
+            self.cursor.execute("""
+                INSERT INTO user_org_colors (userID, orgID, color)
+                VALUES (?, ?, ?)
+                ON CONFLICT(userID, orgID) DO UPDATE SET color = excluded.color
+            """, (userID, orgID, color))
+            self.connection.commit()
+            return True
+        except sqlite3.Error as e:
+            print("setUserOrgColor error:", e)
+            return False
+
+    def clearUserOrgColor(self, userID, orgID):
+        self.cursor.execute(
+            "DELETE FROM user_org_colors WHERE userID = ? AND orgID = ?",
+            (userID, orgID),
+        )
+        self.connection.commit()
+        return self.cursor.rowcount > 0
+
     # ── Opportunities ─────────────────────────────────────────────────────
     def _opportunity_base_query(self):
         return """
         SELECT o.opportunityID, o.title, o.description, o.category,
-               o.location, o.address, o.is_remote, o.event_date,
+               o.location, o.address, o.is_remote,
+               o.event_date, o.event_end_date,
                o.start_time, o.end_time, o.capacity, o.status,
                o.required_skills, o.contact_name, o.contact_email,
                o.created_at, o.updated_at, o.thumbnail, o.source_id,
@@ -552,8 +578,11 @@ class Database:
             conditions.append("o.category = ?")
             params.append(category)
 
+        # Range overlap: an opportunity is in range if any day it spans
+        # falls inside [date_from, date_to].
         if date_from:
-            conditions.append("o.event_date >= ?")
+            end_col = "COALESCE(o.event_end_date, o.event_date)"
+            conditions.append(f"{end_col} >= ?")
             params.append(date_from)
         if date_to:
             conditions.append("o.event_date <= ?")
@@ -561,7 +590,10 @@ class Database:
 
         if upcoming_only:
             today = datetime.now().strftime("%Y-%m-%d")
-            conditions.append("(o.event_date IS NULL OR o.event_date >= ?)")
+            conditions.append(
+                "(o.event_date IS NULL OR "
+                " COALESCE(o.event_end_date, o.event_date) >= ?)"
+            )
             params.append(today)
 
         conditions.append("COALESCE(o.status, 'open') != 'cancelled'")
@@ -585,20 +617,20 @@ class Database:
                        start_time=None, end_time=None, capacity=None,
                        status="open", required_skills=None,
                        contact_name=None, contact_email=None, address=None,
-                       website_link=None):
+                       website_link=None, event_end_date=None):
         try:
             self.cursor.execute("""
                 INSERT INTO opportunities
                 (orgID, title, description, category, location, address,
-                 is_remote, event_date, start_time, end_time, capacity,
-                 status, required_skills, contact_name, contact_email,
-                 thumbnail, website_link)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 is_remote, event_date, event_end_date, start_time, end_time,
+                 capacity, status, required_skills, contact_name,
+                 contact_email, thumbnail, website_link)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 orgID, title, description, category, location, address,
-                1 if is_remote else 0, event_date, start_time, end_time,
-                capacity, status, required_skills, contact_name,
-                contact_email, thumbnail, website_link,
+                1 if is_remote else 0, event_date, event_end_date,
+                start_time, end_time, capacity, status, required_skills,
+                contact_name, contact_email, thumbnail, website_link,
             ))
             self.connection.commit()
             return self.cursor.lastrowid
@@ -608,9 +640,9 @@ class Database:
 
     def updateOpportunity(self, opportunityID, **fields):
         allowed = {"title", "description", "category", "location", "address",
-                   "is_remote", "event_date", "start_time", "end_time",
-                   "capacity", "status", "required_skills", "contact_name",
-                   "contact_email", "thumbnail", "website_link"}
+                   "is_remote", "event_date", "event_end_date", "start_time",
+                   "end_time", "capacity", "status", "required_skills",
+                   "contact_name", "contact_email", "thumbnail", "website_link"}
         sets, params = [], []
         for k, v in fields.items():
             if k not in allowed:
@@ -700,7 +732,8 @@ class Database:
 
     def getSignupsForVolunteer(self, userID):
         self.cursor.execute("""
-            SELECT s.*, o.title, o.event_date, o.start_time, o.end_time,
+            SELECT s.*, o.title, o.event_date, o.event_end_date,
+                   o.start_time, o.end_time,
                    o.location, o.is_remote, o.category,
                    o.required_skills, org.org_name
             FROM event_signups s

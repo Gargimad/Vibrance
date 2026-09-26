@@ -325,7 +325,6 @@ class Landing(QMainWindow):
         return [
             (("listing", None), "Volunteer",
              lambda: self.show_volunteer_listing_page()),
-            (("organize", None), "Organize", self.handle_organize_click),
             (("faq", None), "FAQ", self.show_faq_page),
         ]
 
@@ -430,13 +429,13 @@ class Landing(QMainWindow):
     def show_login_page(self):
         self.loginPage.clear_inputs()
         self._goto(self.loginPage)
-
+    """
     def handle_organize_click(self):
         if self.current_org:
             self._goto(self.orgDashboard)
         else:
             self.show_login_page()
-
+    """
     def handle_login_nav_click(self):
         """Doubles as Login (guest) and Log Out (signed in)."""
         if self.current_user:

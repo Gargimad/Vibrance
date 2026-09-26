@@ -1,8 +1,7 @@
 """
 volunteerHome.py — Volunteer dashboard.
 
-Tabs in a QStackedWidget. Tab buttons live in landing.py's top nav bar
-(see TAB_LABELS / show_tab / tabChanged).
+Tabs in a QStackedWidget. Tab buttons live in landing.py's top nav bar.
     0. Dashboard       summary of every other tab + statistics
     1. Calendar        month view, color-coded by organization
     2. My Events       signups with check-in / check-out / cancel
@@ -10,10 +9,6 @@ Tabs in a QStackedWidget. Tab buttons live in landing.py's top nav bar
     4. Notifications   list of notifications for this user
     5. Help            AI chatbot (Anthropic API)
     6. Profile         edit profile, notification setting, password
-
-set_user_data(user) is called by landing.py after a successful login
-with the dict from Database.authenticate(). userID is read from
-user['userID'].
 """
 
 import calendar
@@ -23,13 +18,13 @@ import os
 import urllib.error
 import urllib.request
 import zlib
-from datetime import date
+from datetime import date, timedelta
 
 from PyQt6.QtCore import Qt, QPointF, QRectF, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPalette
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QStackedWidget, QScrollArea, QMessageBox, QButtonGroup,
+    QStackedWidget, QScrollArea, QMessageBox,
     QCalendarWidget, QLineEdit, QTextBrowser, QCheckBox, QFormLayout,
     QGridLayout, QProgressBar,
 )
@@ -52,10 +47,12 @@ CLAUDE_URL = "https://api.anthropic.com/v1/messages"
 TAB_DASHBOARD, TAB_CALENDAR, TAB_EVENTS, TAB_ORGS = 0, 1, 2, 3
 TAB_NOTIFS, TAB_HELP, TAB_PROFILE = 4, 5, 6
 
+# Cap on how far we'll expand a multi-day event onto the calendar
+MAX_RANGE_DAYS = 90
+
 
 # ── Small helpers ─────────────────────────────────────────────────────────
 def rget(row, key, default=None):
-    """Read a key from a sqlite3.Row or dict without raising."""
     try:
         val = row[key]
     except (KeyError, IndexError, TypeError):
@@ -64,7 +61,6 @@ def rget(row, key, default=None):
 
 
 def org_color(org_name):
-    """Stable color per organization name (same color every session)."""
     if not org_name:
         return INDEPENDENT_COLOR
     return ORG_PALETTE[zlib.crc32(org_name.encode("utf-8")) % len(ORG_PALETTE)]
@@ -77,11 +73,52 @@ def time_range(row):
     return f" · {start}" + (f"–{end}" if end else "")
 
 
+def date_range(row):
+    """
+    Human-readable date string for a row, handling multi-day ranges.
+    Examples:
+        ("2026-09-01", None)                 -> "2026-09-01"
+        ("2026-09-01", "2026-09-03")         -> "2026-09-01 → 2026-09-03"
+        ("Ongoing", None)                    -> "Ongoing"
+    """
+    start = str(rget(row, "event_date", "") or "").strip()
+    end = str(rget(row, "event_end_date", "") or "").strip()
+    if not start:
+        return "TBD"
+    if end and end != start:
+        return f"{start} → {end}"
+    return start
+
+
+def expand_to_days(start_str, end_str):
+    """
+    Yield ISO date strings for every day in [start, end] inclusive.
+    Returns nothing if start can't be parsed as YYYY-MM-DD.
+    Ranges longer than MAX_RANGE_DAYS collapse to just the start day.
+    """
+    if not start_str:
+        return
+    try:
+        start = date.fromisoformat(str(start_str)[:10])
+    except ValueError:
+        return
+    end = start
+    if end_str:
+        try:
+            end = date.fromisoformat(str(end_str)[:10])
+        except ValueError:
+            end = start
+    if (end - start).days > MAX_RANGE_DAYS:
+        end = start
+
+    cur = start
+    while cur <= end:
+        yield cur.isoformat()
+        cur += timedelta(days=1)
+
+
 # ── Calendar widget with colored dots ─────────────────────────────────────
 class EventCalendar(QCalendarWidget):
-    """QCalendarWidget that draws one colored dot per organization on each
-    day that has events."""
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.events_by_date = {}
@@ -125,10 +162,8 @@ class EventCalendar(QCalendarWidget):
         painter.restore()
 
 
-# ── Small bar chart (hours per month) ─────────────────────────────────────
+# ── Small bar chart ───────────────────────────────────────────────────────
 class MonthlyBars(QWidget):
-    """Minimal vertical bar chart: data is [(label, value), ...]."""
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.data = []
@@ -398,7 +433,6 @@ class VolunteerHome(QWidget):
         lay.addWidget(self.welcome_title)
         lay.addWidget(self.user_info_label)
 
-        # Statistic tiles
         tiles = QHBoxLayout()
         tiles.setSpacing(10)
         self.tile_values = {}
@@ -426,7 +460,6 @@ class VolunteerHome(QWidget):
             tiles.addWidget(tile, 1)
         lay.addLayout(tiles)
 
-        # Recommended for you (ML-ranked)
         rec_card, self.dash_recommended = self._dash_card(
             "Recommended for you", "Browse all", TAB_DASHBOARD
         )
@@ -434,7 +467,6 @@ class VolunteerHome(QWidget):
         rec_wrap.addWidget(rec_card, 0, 0)
         lay.addLayout(rec_wrap)
 
-        # 2x2 grid of summaries
         grid = QGridLayout()
         grid.setSpacing(16)
         grid.setColumnStretch(0, 1)
@@ -527,6 +559,11 @@ class VolunteerHome(QWidget):
         return page
 
     def _refresh_calendar(self):
+        """
+        Fetch every signup, expand each into the days it spans, and bucket
+        by ISO date. A Sept 1 → Sept 15 event lands in all fifteen buckets,
+        so the calendar draws a dot on every day of the range.
+        """
         rows = self._db("getSignupsForVolunteer", self.userID, default=[]) \
             if self.userID else []
         rows = [r for r in rows if (rget(r, "status", "") or "") != "cancelled"]
@@ -535,9 +572,10 @@ class VolunteerHome(QWidget):
         by_date = {}
         orgs = {}
         for r in rows:
-            d = rget(r, "event_date")
-            if d:
-                by_date.setdefault(str(d)[:10], []).append(r)
+            start = str(rget(r, "event_date", "") or "")
+            end = str(rget(r, "event_end_date", "") or "") or start
+            for iso in expand_to_days(start, end):
+                by_date.setdefault(iso, []).append(r)
             name = rget(r, "org_name") or "Independent"
             orgs[name] = org_color(rget(r, "org_name"))
         self.calendar.set_events(by_date)
@@ -583,7 +621,7 @@ class VolunteerHome(QWidget):
         title = QLabel(rget(r, "title", "Untitled event"))
         title.setObjectName(theme.EVENT_TITLE_LIST)
         meta = QLabel(
-            f"{rget(r, 'org_name', 'Independent')}"
+            f"{date_range(r)} · {rget(r, 'org_name', 'Independent')}"
             f"{time_range(r)}"
         )
         meta.setObjectName(theme.EVENT_META_VALUE)
@@ -625,7 +663,7 @@ class VolunteerHome(QWidget):
         title.setObjectName(theme.EVENT_TITLE_LIST)
 
         meta = QLabel(
-            f"{r['event_date'] or 'TBD'}{time_range(r)}\n"
+            f"{date_range(r)}{time_range(r)}\n"
             f"{r['org_name'] or 'Independent'} · "
             f"status: {r['status'] or 'registered'}"
         )
@@ -885,7 +923,7 @@ class VolunteerHome(QWidget):
             d = str(rget(r, "event_date", ""))[:10]
             if d >= today:
                 upcoming.append(
-                    f"- {rget(r, 'title', 'Untitled')} on {d}"
+                    f"- {rget(r, 'title', 'Untitled')} on {date_range(r)}"
                     f"{time_range(r)} ({rget(r, 'org_name', 'Independent')})"
                 )
         upcoming_txt = "\n".join(upcoming[:10]) or "none"
@@ -1182,16 +1220,20 @@ class VolunteerHome(QWidget):
         def day(r):
             return str(rget(r, "event_date", ""))[:10]
 
+        def end_day(r):
+            e = str(rget(r, "event_end_date", "") or "")[:10]
+            return e or day(r)
+
         def hrs(r):
             return float(rget(r, "hours_logged", 0) or 0)
 
         completed = [r for r in active if rget(r, "check_out_time")]
         upcoming = sorted(
             (r for r in active
-             if day(r) >= today_s and not rget(r, "check_out_time")),
+             if end_day(r) >= today_s and not rget(r, "check_out_time")),
             key=lambda r: (day(r), str(rget(r, "start_time", ""))),
         )
-        past = [r for r in active if day(r) and day(r) < today_s]
+        past = [r for r in active if end_day(r) and end_day(r) < today_s]
         past_done = [r for r in past if rget(r, "check_out_time")]
         total_hours = sum(hrs(r) for r in active)
 
@@ -1214,10 +1256,8 @@ class VolunteerHome(QWidget):
             f"{round(100 * len(past_done) / len(past))}%" if past else "—"
         )
 
-        # Recommendations (ML-ranked)
         self._refresh_recommendations(active)
 
-        # Upcoming events
         if not upcoming:
             self.dash_upcoming.addWidget(self._dash_text(
                 "Nothing coming up — find events in the Volunteer tab."))
@@ -1225,14 +1265,13 @@ class VolunteerHome(QWidget):
             self.dash_upcoming.addWidget(self._dash_row(
                 org_color(rget(r, "org_name")),
                 str(rget(r, "title", "Untitled event")),
-                f"{rget(r, 'event_date', 'TBD')}{time_range(r)} · "
+                f"{date_range(r)}{time_range(r)} · "
                 f"{rget(r, 'org_name', 'Independent')}",
             ))
         if len(upcoming) > 4:
             self.dash_upcoming.addWidget(
                 self._dash_text(f"+ {len(upcoming) - 4} more"))
 
-        # Hours by month
         totals = {}
         for r in active:
             totals[day(r)[:7]] = totals.get(day(r)[:7], 0.0) + hrs(r)
@@ -1246,7 +1285,6 @@ class VolunteerHome(QWidget):
                          totals.get(f"{yy:04d}-{mm:02d}", 0.0)))
         self.dash_chart.set_data(data)
 
-        # Hours by organization
         by_org = {}
         for r in active:
             name = rget(r, "org_name") or "Independent"
@@ -1283,7 +1321,6 @@ class VolunteerHome(QWidget):
             h.addWidget(hv)
             self.dash_org_hours.addWidget(row)
 
-        # My organizations
         if not joined:
             self.dash_orgs.addWidget(self._dash_text(
                 "You haven't joined any organizations yet."))
@@ -1293,7 +1330,6 @@ class VolunteerHome(QWidget):
             self.dash_orgs.addWidget(
                 self._dash_text(f"+ {len(joined) - 6} more"))
 
-        # Recent notifications
         notifs = self._db("getNotifications", self.userID, default=[]) or []
         notifs = sorted(notifs, key=lambda r: str(rget(r, "created_at", "")),
                         reverse=True)[:3]
@@ -1312,7 +1348,7 @@ class VolunteerHome(QWidget):
                     self.dash_orgs, self.dash_notifs):
             lay.addStretch(1)
 
-    # ── Recommendations (content-based ranking) ──────────────────────────
+    # ── Recommendations ───────────────────────────────────────────────────
     def _refresh_recommendations(self, active_signups):
         self._clear_all(self.dash_recommended)
 
@@ -1349,7 +1385,7 @@ class VolunteerHome(QWidget):
 
         for r, s in zip(recs, scores):
             sub = (
-                f"{rget(r, 'event_date', 'TBD')}{time_range(r)} · "
+                f"{date_range(r)}{time_range(r)} · "
                 f"{rget(r, 'org_name', 'Independent')}"
             )
             if s > 0:
