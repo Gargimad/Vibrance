@@ -9,11 +9,11 @@ Composes:
     • a QScrollArea with either a QGridLayout (grid view) or a QVBoxLayout
       (list view), populated with EventCards
 
-Filtering runs in SQL via Database.searchOpportunitiesFiltered. The page
-only handles presentation and layout.
-
-Signals emitted upward:
-    openLinkRequested(str) — the user clicked "Open link" on a card or dialog.
+Signals:
+    openLinkRequested(str)  — the user clicked "Open link" on a card.
+    rsvpSucceeded(int)      — the user successfully RSVP'd for an
+                              opportunity. landing.py listens and jumps
+                              to the volunteer's My Events tab.
 """
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -31,6 +31,7 @@ from filterBar import FilterBar
 
 class VolunteerPage(QWidget):
     openLinkRequested = pyqtSignal(str)
+    rsvpSucceeded = pyqtSignal(int)     # opportunityID
 
     def __init__(self, db, on_back_click=None, parent=None):
         super().__init__(parent)
@@ -144,7 +145,6 @@ class VolunteerPage(QWidget):
         self.content_stack = QStackedWidget()
         self.content_stack.setObjectName(theme.VOLUNTEER_CONTENT_STACK)
 
-        # Grid container
         self.grid_container = QWidget()
         self.grid_container.setObjectName(theme.VOLUNTEER_GRID_CONTAINER)
         self.grid_layout = QGridLayout(self.grid_container)
@@ -154,7 +154,6 @@ class VolunteerPage(QWidget):
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
         )
 
-        # List container
         self.list_container = QWidget()
         self.list_container.setObjectName(theme.VOLUNTEER_LIST_CONTAINER)
         self.list_layout = QVBoxLayout(self.list_container)
@@ -169,7 +168,6 @@ class VolunteerPage(QWidget):
 
     # ── External API ──────────────────────────────────────────────────────
     def set_current_volunteer(self, volunteer_id):
-        """Called by landing.py on login/logout so RSVP knows who's asking."""
         self.current_volunteer_id = volunteer_id
         self.refresh()
 
@@ -253,7 +251,7 @@ class VolunteerPage(QWidget):
 
     def _populate_grid(self, rows):
         self._grid_cards = [self._make_card(row, "grid") for row in rows]
-        self._grid_cols = 0  # force next _layout_grid to place them
+        self._grid_cols = 0
 
     def _populate_list(self, rows):
         for row in rows:
@@ -287,7 +285,6 @@ class VolunteerPage(QWidget):
         if cols == self._grid_cols and not force:
             return
         self._grid_cols = cols
-        # Detach without deleting, then re-add in the new arrangement.
         while self.grid_layout.count():
             self.grid_layout.takeAt(0)
         for idx, card in enumerate(self._grid_cards):
@@ -318,11 +315,26 @@ class VolunteerPage(QWidget):
             self.current_volunteer_id, opportunity_id
         )
         if result == "ok":
+            # Record a notification so it shows up in the volunteer's
+            # Notifications tab.
+            try:
+                row = self.db.getOpportunityByID(opportunity_id)
+                title = row["title"] if row else "an event"
+                self.db.addNotification(
+                    self.current_volunteer_id,
+                    f"You signed up for {title}.",
+                    "rsvp", opportunity_id,
+                )
+            except Exception as e:
+                print("addNotification failed:", e)
+
             QMessageBox.information(
                 self, "Registered",
-                "You're signed up! See 'My Events' in your dashboard.",
+                "You're signed up! Taking you to My Events.",
             )
-            self.refresh()  # update the spots line on every visible card
+            self.refresh()
+            # Tell landing to jump to the volunteer's My Events tab
+            self.rsvpSucceeded.emit(opportunity_id)
         elif result == "duplicate":
             QMessageBox.information(
                 self, "Already registered",

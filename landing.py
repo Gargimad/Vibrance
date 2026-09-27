@@ -14,18 +14,14 @@ Pages in the stack (index):
     7  org dashboard       OrgDashboard
 
 Routing on login:
-    user['role'] == 'volunteer'  → show volunteer home
-    user['role'] == 'org'        → show org dashboard
+    user['role'] == 'volunteer'  → volunteer dashboard
+    user['role'] == 'org'        → org dashboard
 
-The top nav bar has three modes, switched by _set_nav_mode():
-    guest      Volunteer · Organize · FAQ · Register ▾ · Login
+Nav bar has three modes, switched by _set_nav_mode():
+    guest      Volunteer · FAQ · Register ▾ · Login
     volunteer  tabs from VolunteerHome.TAB_LABELS, with the public
                "Volunteer" listing slotted in after "My Events" · Log Out
-    org        tabs from OrgDashboard.TAB_LABELS (if it defines them),
-               plus FAQ · Log Out
-
-Theme is applied via theme.apply_theme(app, is_dark). Toggle persists
-through QSettings('theme').
+    org        tabs from OrgDashboard.TAB_LABELS · FAQ · Log Out
 """
 
 import os
@@ -49,12 +45,12 @@ from FAQ import FAQPage
 from login import Login
 from volunteerRegister import VolunteerRegistration
 from orgRegister import OrganizationRegistration
-from volunteerHome import VolunteerHome
+from volunteerHome import VolunteerHome, TAB_PROFILE
 from orgDashboard import OrgDashboard
 from volunteerPage import VolunteerPage
 
 
-# Page-stack indices — keep in sync with the construction order below
+# Page-stack indices
 PAGE_HOME       = 0
 PAGE_VOL_REG    = 1
 PAGE_ORG_REG    = 2
@@ -67,8 +63,8 @@ PAGE_ORG_DASH   = 7
 # Nav modes
 NAV_GUEST, NAV_VOLUNTEER, NAV_ORG = "guest", "volunteer", "org"
 
-# In volunteer mode, the public "Volunteer" listing tab is inserted right
-# after this VolunteerHome tab index (2 == "My Events").
+# In volunteer mode, the public "Volunteer" listing tab is inserted
+# right after this VolunteerHome tab index (2 == "My Events").
 LISTING_AFTER_HOME_TAB = 2
 
 
@@ -85,12 +81,11 @@ class Landing(QMainWindow):
             self.settings.value("theme", "light", type=str) == "dark"
         )
 
-        # Session state — exactly one of these is set at a time
-        self.current_user = None   # volunteer dict from db.authenticate()
-        self.current_org = None    # org dict from db.authenticate()
+        self.current_user = None
+        self.current_org = None
 
         self.nav_mode = NAV_GUEST
-        self._nav_buttons = {}     # nav key -> checkable tab button
+        self._nav_buttons = {}
 
         self.db = Database()
 
@@ -102,7 +97,6 @@ class Landing(QMainWindow):
         self._update_logos()
         self._sync_search_bar_visibility()
 
-        # Initial population of the home-page carousels
         self._refresh_home_carousels()
 
     # ── UI construction ───────────────────────────────────────────────────
@@ -134,13 +128,11 @@ class Landing(QMainWindow):
         self.nav_logo.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.nav_logo.mousePressEvent = lambda e: self.show_home_page()
 
-        # Container whose buttons are rebuilt by _set_nav_mode()
         self.navTabs = QWidget()
         self.navTabsLayout = QHBoxLayout(self.navTabs)
         self.navTabsLayout.setContentsMargins(0, 0, 0, 0)
         self.navTabsLayout.setSpacing(8)
 
-        # Register dropdown (guests only)
         self.btnConnect = QPushButton("Register ▾")
         self.btnConnect.setObjectName(theme.NAV_DROPDOWN)
 
@@ -153,7 +145,6 @@ class Landing(QMainWindow):
         register_menu.addAction(action_org)
         self.btnConnect.setMenu(register_menu)
 
-        # "Login" for guests, "Log Out" once signed in
         self.btnLogin = QPushButton("Login")
         self.btnLogin.clicked.connect(self.handle_login_nav_click)
 
@@ -203,11 +194,17 @@ class Landing(QMainWindow):
         )
         self.pageStack.addWidget(self.loginPage)
 
-        # 4 — Volunteer home (tabs are driven by the nav bar; logout lives
-        # in the nav bar too)
+        # 4 — Volunteer home
         self.volunteerHomePage = VolunteerHome(db=self.db)
         self.volunteerHomePage.tabChanged.connect(
             lambda _i: self._sync_nav_highlight()
+        )
+        # New signals from the first-time welcome card
+        self.volunteerHomePage.browseOpportunitiesRequested.connect(
+            self.show_volunteer_listing_page
+        )
+        self.volunteerHomePage.goToProfileRequested.connect(
+            lambda: self.show_volunteer_tab(TAB_PROFILE)
         )
         self.pageStack.addWidget(self.volunteerHomePage)
 
@@ -222,6 +219,10 @@ class Landing(QMainWindow):
         self.volunteerListingPage.openLinkRequested.connect(
             self.open_external_link
         )
+        # RSVP success → jump to the volunteer's My Events tab
+        self.volunteerListingPage.rsvpSucceeded.connect(
+            self._handle_rsvp_success
+        )
         self.pageStack.addWidget(self.volunteerListingPage)
 
         # 7 — Org dashboard
@@ -230,8 +231,6 @@ class Landing(QMainWindow):
             on_logout_click=self.handle_org_logout,
             on_back_click=self.show_home_page,
         )
-        # Optional: if OrgDashboard defines a tabChanged signal, keep the
-        # nav highlight in sync with it.
         if hasattr(self.orgDashboard, "tabChanged"):
             self.orgDashboard.tabChanged.connect(
                 lambda _i: self._sync_nav_highlight()
@@ -292,11 +291,6 @@ class Landing(QMainWindow):
 
     # ── Session-aware nav bar ─────────────────────────────────────────────
     def _nav_spec(self, mode):
-        """Return [(key, label, callback), ...] for the given nav mode.
-
-        `key` identifies the destination so _sync_nav_highlight() can work
-        out which button matches the page currently on screen.
-        """
         if mode == NAV_VOLUNTEER:
             specs = []
             for i, label in enumerate(VolunteerHome.TAB_LABELS):
@@ -321,7 +315,7 @@ class Landing(QMainWindow):
             specs.append((("faq", None), "FAQ", self.show_faq_page))
             return specs
 
-        # Guest
+        # Guest — Organize removed
         return [
             (("listing", None), "Volunteer",
              lambda: self.show_volunteer_listing_page()),
@@ -329,10 +323,8 @@ class Landing(QMainWindow):
         ]
 
     def _set_nav_mode(self, mode):
-        """Rebuild the tab buttons for guest / volunteer / org."""
         self.nav_mode = mode
 
-        # Clear old tab buttons
         while self.navTabsLayout.count():
             item = self.navTabsLayout.takeAt(0)
             if item.widget():
@@ -344,7 +336,6 @@ class Landing(QMainWindow):
             btn = QPushButton(label)
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             if logged_in:
-                # Same look as the dashboard's old tab toggles
                 btn.setObjectName(theme.VIEW_TOGGLE_BTN)
                 btn.setCheckable(True)
             btn.clicked.connect(lambda _checked=False, cb=callback: cb())
@@ -389,7 +380,6 @@ class Landing(QMainWindow):
         self._sync_nav_highlight()
 
     def _sync_search_bar_visibility(self):
-        # Search only makes sense on the guest home page
         self.searchBar.setVisible(
             self.pageStack.currentWidget() is self.guestHomePage
         )
@@ -429,15 +419,8 @@ class Landing(QMainWindow):
     def show_login_page(self):
         self.loginPage.clear_inputs()
         self._goto(self.loginPage)
-    """
-    def handle_organize_click(self):
-        if self.current_org:
-            self._goto(self.orgDashboard)
-        else:
-            self.show_login_page()
-    """
+
     def handle_login_nav_click(self):
-        """Doubles as Login (guest) and Log Out (signed in)."""
         if self.current_user:
             self.handle_logout()
         elif self.current_org:
@@ -447,9 +430,6 @@ class Landing(QMainWindow):
 
     # ── Registration callback ─────────────────────────────────────────────
     def _handle_registration_success(self, userID):
-        # Don't auto-login after registration — the user still has to
-        # authenticate (and pass MFA). Send them to the login page with
-        # a fresh form.
         self.show_login_page()
 
     # ── Login callback ────────────────────────────────────────────────────
@@ -462,7 +442,7 @@ class Landing(QMainWindow):
             self.volunteerListingPage.set_current_volunteer(user["userID"])
             self._refresh_home_carousels()
             self._goto(self.volunteerHomePage)
-        else:  # org
+        else:
             self.current_org = user
             self.current_user = None
             self._set_nav_mode(NAV_ORG)
@@ -482,13 +462,16 @@ class Landing(QMainWindow):
         self._set_nav_mode(NAV_GUEST)
         self._goto(self.guestHomePage)
 
+    # ── RSVP callback ─────────────────────────────────────────────────────
+    def _handle_rsvp_success(self, opportunity_id):
+        """Volunteer just RSVP'd on the listing page. Jump to My Events."""
+        if not self.current_user:
+            return
+        self._goto(self.volunteerHomePage)
+        self.volunteerHomePage.show_my_events()
+
     # ── Home carousels ────────────────────────────────────────────────────
     def _refresh_home_carousels(self):
-        """
-        Rebuild the three home-page carousels with the current session in
-        mind. Called at startup, on volunteer login, and on logout so the
-        RSVP tooltips and enabled state reflect who's logged in.
-        """
         if not hasattr(self, "opportunitiesSection"):
             return
         volunteer_id = self.current_user["userID"] if self.current_user else None
@@ -505,7 +488,6 @@ class Landing(QMainWindow):
             return
         self.show_volunteer_listing_page(keyword=keyword)
         if category and category != "All":
-            # The listing page's FilterBar knows how to map legacy values
             self.volunteerListingPage.set_type_filter(category)
 
     def open_external_link(self, url):
@@ -523,9 +505,6 @@ class Landing(QMainWindow):
         self._update_logos()
 
     def _update_logos(self):
-        # Logo asset names are counterintuitive:
-        #   logoFullLight.png  — light-coloured text, used on dark bg
-        #   logoFullDark.png   — dark-coloured text, used on light bg
         filename = ("logoFullLight.png" if self.is_dark_mode
                     else "logoFullDark.png")
         path = theme.asset(filename)

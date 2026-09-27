@@ -2,7 +2,7 @@
 volunteerHome.py — Volunteer dashboard.
 
 Tabs in a QStackedWidget. Tab buttons live in landing.py's top nav bar.
-    0. Dashboard       summary of every other tab + statistics
+    0. Dashboard       summary + statistics + first-time welcome
     1. Calendar        month view, color-coded by organization
     2. My Events       signups with check-in / check-out / cancel
     3. Organizations   join / leave organizations
@@ -47,7 +47,6 @@ CLAUDE_URL = "https://api.anthropic.com/v1/messages"
 TAB_DASHBOARD, TAB_CALENDAR, TAB_EVENTS, TAB_ORGS = 0, 1, 2, 3
 TAB_NOTIFS, TAB_HELP, TAB_PROFILE = 4, 5, 6
 
-# Cap on how far we'll expand a multi-day event onto the calendar
 MAX_RANGE_DAYS = 90
 
 
@@ -74,13 +73,6 @@ def time_range(row):
 
 
 def date_range(row):
-    """
-    Human-readable date string for a row, handling multi-day ranges.
-    Examples:
-        ("2026-09-01", None)                 -> "2026-09-01"
-        ("2026-09-01", "2026-09-03")         -> "2026-09-01 → 2026-09-03"
-        ("Ongoing", None)                    -> "Ongoing"
-    """
     start = str(rget(row, "event_date", "") or "").strip()
     end = str(rget(row, "event_end_date", "") or "").strip()
     if not start:
@@ -91,11 +83,6 @@ def date_range(row):
 
 
 def expand_to_days(start_str, end_str):
-    """
-    Yield ISO date strings for every day in [start, end] inclusive.
-    Returns nothing if start can't be parsed as YYYY-MM-DD.
-    Ranges longer than MAX_RANGE_DAYS collapse to just the start day.
-    """
     if not start_str:
         return
     try:
@@ -261,6 +248,12 @@ class VolunteerHome(QWidget):
 
     tabChanged = pyqtSignal(int)
 
+    # Emitted when the volunteer clicks "Browse opportunities" or
+    # "Complete your profile" on the first-time welcome card.
+    # landing.py connects these to navigation.
+    browseOpportunitiesRequested = pyqtSignal()
+    goToProfileRequested = pyqtSignal()
+
     def __init__(self, on_logout_click=None, db=None, parent=None):
         super().__init__(parent)
         self.on_logout_click = on_logout_click
@@ -271,6 +264,7 @@ class VolunteerHome(QWidget):
         self._chat_history = []
         self._chat_worker = None
         self._signup_rows = []
+        self._welcome_dismissed = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -314,6 +308,17 @@ class VolunteerHome(QWidget):
             QMessageBox.warning(self, "Error", str(e))
             return False
         return bool(ok)
+
+    def _notify(self, message, type_=None, opportunity_id=None):
+        """Best-effort notification. Never raises."""
+        if not (self.db and self.userID):
+            return
+        try:
+            self.db.addNotification(
+                self.userID, message, type_, opportunity_id
+            )
+        except Exception as e:
+            print("addNotification failed:", e)
 
     def _build_slogan_bar(self):
         bar = QWidget()
@@ -433,6 +438,11 @@ class VolunteerHome(QWidget):
         lay.addWidget(self.welcome_title)
         lay.addWidget(self.user_info_label)
 
+        # ── First-time welcome card ───────────────────────────────────────
+        self.first_time_card = self._build_first_time_card()
+        lay.addWidget(self.first_time_card)
+
+        # Statistic tiles
         tiles = QHBoxLayout()
         tiles.setSpacing(10)
         self.tile_values = {}
@@ -494,6 +504,25 @@ class VolunteerHome(QWidget):
             "Recent notifications", "View all", TAB_NOTIFS)
         lay.addWidget(card)
 
+        # ── Organizer nudge ───────────────────────────────────────────────
+        org_nudge = QFrame()
+        org_nudge.setObjectName(theme.EVENT_CARD)
+        ol = QHBoxLayout(org_nudge)
+        ol.setContentsMargins(16, 12, 16, 12)
+        omsg = QLabel(
+            "Part of an organization? You can register one and switch "
+            "to the organizer view."
+        )
+        omsg.setObjectName(theme.EVENT_META_VALUE)
+        omsg.setWordWrap(True)
+        o_btn = QPushButton("Set up an organization")
+        o_btn.setObjectName(theme.SECONDARY_BTN)
+        o_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        o_btn.clicked.connect(self._on_setup_org)
+        ol.addWidget(omsg, 1)
+        ol.addWidget(o_btn)
+        lay.addWidget(org_nudge)
+
         help_card = QFrame()
         help_card.setObjectName(theme.EVENT_CARD)
         hl = QHBoxLayout(help_card)
@@ -512,6 +541,74 @@ class VolunteerHome(QWidget):
         scroll.setWidget(content)
         outer.addWidget(scroll)
         return page
+
+    def _build_first_time_card(self):
+        """
+        Shown at the top of the Dashboard when the volunteer has no
+        signups yet. Hidden otherwise.
+        """
+        card = QFrame()
+        card.setObjectName(theme.EVENT_CARD)
+        card.setStyleSheet(
+            f"QFrame#{theme.EVENT_CARD} "
+            "{ border-left: 6px solid #2E86DE; }"
+        )
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 16, 20, 16)
+        v.setSpacing(10)
+
+        title = QLabel("Welcome to Moxie! Here's how to get started.")
+        title.setObjectName(theme.EVENT_TITLE_LIST)
+
+        body = QLabel(
+            "Browse volunteering opportunities, RSVP to events you care "
+            "about, and track your hours. Add a few skills to your profile "
+            "so our recommendations can find events that fit you."
+        )
+        body.setObjectName(theme.EVENT_META_VALUE)
+        body.setWordWrap(True)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+
+        browse = QPushButton("Browse opportunities")
+        browse.setObjectName(theme.PRIMARY_BTN)
+        browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse.clicked.connect(self.browseOpportunitiesRequested.emit)
+        row.addWidget(browse)
+
+        profile = QPushButton("Complete your profile")
+        profile.setObjectName(theme.SECONDARY_BTN)
+        profile.setCursor(Qt.CursorShape.PointingHandCursor)
+        profile.clicked.connect(self.goToProfileRequested.emit)
+        row.addWidget(profile)
+
+        row.addStretch(1)
+
+        dismiss = QPushButton("I'll look around")
+        dismiss.setObjectName(theme.SECONDARY_BTN)
+        dismiss.setCursor(Qt.CursorShape.PointingHandCursor)
+        dismiss.clicked.connect(self._dismiss_first_time)
+        row.addWidget(dismiss)
+
+        v.addWidget(title)
+        v.addWidget(body)
+        v.addLayout(row)
+
+        card.setVisible(False)   # toggled by _refresh_dashboard
+        return card
+
+    def _dismiss_first_time(self):
+        self._welcome_dismissed = True
+        self.first_time_card.setVisible(False)
+
+    def _on_setup_org(self):
+        QMessageBox.information(
+            self, "Organization setup",
+            "To register an organization, log out and choose "
+            "'Register ▾ → Register an Organization' from the home page. "
+            "You'll use a separate email for the organization account."
+        )
 
     # ── 1. Calendar ───────────────────────────────────────────────────────
     def _build_calendar_page(self):
@@ -559,11 +656,6 @@ class VolunteerHome(QWidget):
         return page
 
     def _refresh_calendar(self):
-        """
-        Fetch every signup, expand each into the days it spans, and bucket
-        by ISO date. A Sept 1 → Sept 15 event lands in all fifteen buckets,
-        so the calendar draws a dot on every day of the range.
-        """
         rows = self._db("getSignupsForVolunteer", self.userID, default=[]) \
             if self.userID else []
         rows = [r for r in rows if (rget(r, "status", "") or "") != "cancelled"]
@@ -710,10 +802,18 @@ class VolunteerHome(QWidget):
 
     def _do_check_in(self, opportunityID):
         if self.db.checkIn(self.userID, opportunityID):
+            self._notify(
+                "You checked in. Remember to check out when you're done.",
+                "check_in", opportunityID,
+            )
             self._after_signup_change()
 
     def _do_check_out(self, opportunityID):
         if self.db.checkOut(self.userID, opportunityID):
+            self._notify(
+                "You checked out. Your hours have been recorded.",
+                "check_out", opportunityID,
+            )
             self._after_signup_change()
 
     def _do_cancel(self, opportunityID):
@@ -722,11 +822,22 @@ class VolunteerHome(QWidget):
         ) != QMessageBox.StandardButton.Yes:
             return
         if self.db.cancelSignup(self.userID, opportunityID):
+            self._notify(
+                "You cancelled your signup for an event.",
+                "cancel", opportunityID,
+            )
             self._after_signup_change()
 
     def _after_signup_change(self):
         self._refresh_events()
         self._refresh_dashboard()
+
+    def show_my_events(self):
+        """
+        Public entry point used by landing.py after a successful RSVP
+        from the listing page. Jumps to the My Events tab.
+        """
+        self.show_tab(TAB_EVENTS)
 
     # ── 3. Organizations ──────────────────────────────────────────────────
     def _build_orgs_page(self):
@@ -818,6 +929,7 @@ class VolunteerHome(QWidget):
 
     def _do_join(self, orgID):
         if self._db_action("joinOrganization", self.userID, orgID):
+            self._notify("You joined a new organization.", "join_org")
             self._refresh_orgs()
 
     def _do_leave(self, orgID, name):
@@ -826,6 +938,7 @@ class VolunteerHome(QWidget):
         ) != QMessageBox.StandardButton.Yes:
             return
         if self._db_action("leaveOrganization", self.userID, orgID):
+            self._notify("You left an organization.", "leave_org")
             self._refresh_orgs()
 
     # ── 4. Notifications ──────────────────────────────────────────────────
@@ -935,10 +1048,12 @@ class VolunteerHome(QWidget):
             "Volunteer (browse and sign up for events), Organizations "
             "(join or leave), Notifications, Help, and Profile (edit "
             "details, notification setting, change password). Hours are "
-            "logged from check-in to check-out. If you don't know "
-            "something specific to a particular organization or event, say "
-            "so and suggest contacting the organization. Their upcoming "
-            "events:\n" + upcoming_txt
+            "logged from check-in to check-out. Events come from two "
+            "sources: opportunities posted by organizations on Moxie, and "
+            "opportunities imported from the Volunteer Connector public API. "
+            "If you don't know something specific to a particular "
+            "organization or event, say so and suggest contacting the "
+            "organization. Their upcoming events:\n" + upcoming_txt
         )
 
     def _send_chat(self):
@@ -1012,10 +1127,15 @@ class VolunteerHome(QWidget):
         self.pf_last = QLineEdit()
         self.pf_email = QLineEdit()
         self.pf_phone = QLineEdit()
+        self.pf_skills = QLineEdit()
+        self.pf_skills.setPlaceholderText(
+            "e.g. environment, teaching, logistics"
+        )
         form.addRow("First name", self.pf_first)
         form.addRow("Last name", self.pf_last)
         form.addRow("Email", self.pf_email)
         form.addRow("Phone", self.pf_phone)
+        form.addRow("Skills", self.pf_skills)
         dl.addLayout(form)
 
         self.pf_notify = QCheckBox("Email me about event updates and reminders")
@@ -1078,6 +1198,7 @@ class VolunteerHome(QWidget):
         self.pf_last.setText(str(rget(src, "last_name", "")))
         self.pf_email.setText(str(rget(src, "email", "")))
         self.pf_phone.setText(str(rget(src, "phone", "")))
+        self.pf_skills.setText(str(rget(src, "skills", "")))
         self.pf_notify.setChecked(bool(rget(src, "notify_email", 1)))
         self.pf_status.setText("")
 
@@ -1096,6 +1217,7 @@ class VolunteerHome(QWidget):
             "last_name": self.pf_last.text().strip(),
             "email": email,
             "phone": self.pf_phone.text().strip(),
+            "skills": self.pf_skills.text().strip(),
             "notify_email": 1 if self.pf_notify.isChecked() else 0,
         }
         if self._db_action("updateUserProfile", self.userID, fields):
@@ -1104,6 +1226,7 @@ class VolunteerHome(QWidget):
             self.welcome_title.setText(f"Welcome, {first}!")
             self.user_info_label.setText(f"Logged in as: {email}")
             self.pf_status.setText("✓ Saved")
+            self._refresh_recommendations(self._signup_rows)
         else:
             self.pf_status.setText("Couldn't save changes.")
 
@@ -1166,6 +1289,7 @@ class VolunteerHome(QWidget):
         self._chat_history = []
         self._chat_reset_view()
         self._signup_rows = []
+        self._welcome_dismissed = False
 
         self.show_tab(TAB_DASHBOARD)
 
@@ -1213,6 +1337,12 @@ class VolunteerHome(QWidget):
         rows = self._db("getSignupsForVolunteer", self.userID, default=[]) or []
         active = [r for r in rows if (rget(r, "status", "") or "") != "cancelled"]
         self._signup_rows = active
+
+        # Show/hide the first-time welcome card
+        has_activity = bool(active)
+        self.first_time_card.setVisible(
+            not has_activity and not self._welcome_dismissed
+        )
 
         today = date.today()
         today_s = today.isoformat()
@@ -1370,6 +1500,24 @@ class VolunteerHome(QWidget):
 
         user_profile = self._db("getUserProfile", self.userID) or self.user_data
         joined_orgs = self._db("getOrganizations", self.userID, default=[]) or []
+
+        # If the profile has no skills, the vectorizer has nothing to
+        # work with. Prompt instead of showing "no recommendations".
+        skills = str(rget(user_profile, "skills", "") or "").strip()
+        if not skills and not active_signups:
+            lbl = QLabel(
+                "Add a few skills to your profile to unlock recommendations."
+            )
+            lbl.setObjectName(theme.VOLUNTEER_EMPTY)
+            lbl.setWordWrap(True)
+            self.dash_recommended.addWidget(lbl)
+
+            btn = QPushButton("Open profile →")
+            btn.setObjectName(theme.SECONDARY_BTN)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda: self.show_tab(TAB_PROFILE))
+            self.dash_recommended.addWidget(btn)
+            return
 
         recs, scores = rank_opportunities(
             user_profile, active_signups, joined_orgs,

@@ -665,6 +665,88 @@ class Database:
         except sqlite3.Error as e:
             print("updateOpportunity error:", e)
             return False
+    # ── New helpers for the org dashboard and notifications ───────────────
+
+    def getRecentSignupsForOrg(self, orgID, limit=10):
+        """
+        Recent signups across all opportunities owned by this org.
+        Returns rows: signupID, userID, opportunityID, signup_time,
+                    first_name, last_name, email, title, event_date
+        """
+        self.cursor.execute("""
+            SELECT s.signupID, s.userID, s.opportunityID, s.status,
+                s.signup_time,
+                vp.first_name, vp.last_name, u.email,
+                o.title, o.event_date
+            FROM event_signups s
+            JOIN opportunities o ON s.opportunityID = o.opportunityID
+            JOIN users u ON s.userID = u.userID
+            LEFT JOIN volunteer_profiles vp ON u.userID = vp.userID
+            WHERE o.orgID = ?
+            AND s.status = 'registered'
+            ORDER BY s.signup_time DESC
+            LIMIT ?
+        """, (orgID, limit))
+        return self.cursor.fetchall()
+
+    def getOrgStats(self, orgID):
+        """
+        Aggregated numbers for the org's Overview tab:
+            total_opportunities, open_opportunities,
+            total_signups, total_hours, unique_volunteers
+        """
+        stats = {}
+
+        self.cursor.execute("""
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN COALESCE(status,'open') = 'open' THEN 1 ELSE 0 END)
+                    AS open_count
+            FROM opportunities
+            WHERE orgID = ?
+        """, (orgID,))
+        row = self.cursor.fetchone()
+        stats["total_opportunities"] = row["total"] or 0
+        stats["open_opportunities"] = row["open_count"] or 0
+
+        self.cursor.execute("""
+            SELECT
+                COUNT(*) AS signups,
+                COALESCE(SUM(s.hours_logged), 0) AS hours,
+                COUNT(DISTINCT s.userID) AS volunteers
+            FROM event_signups s
+            JOIN opportunities o ON s.opportunityID = o.opportunityID
+            WHERE o.orgID = ?
+            AND s.status = 'registered'
+        """, (orgID,))
+        row = self.cursor.fetchone()
+        stats["total_signups"] = row["signups"] or 0
+        stats["total_hours"] = float(row["hours"] or 0)
+        stats["unique_volunteers"] = row["volunteers"] or 0
+
+        return stats
+
+    def getUpcomingForOrg(self, orgID, limit=3):
+        """
+        The org's own next N events, soonest first.
+        Used on the Overview tab to show "what's coming up".
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.cursor.execute("""
+            SELECT opportunityID, title, event_date, event_end_date,
+                start_time, end_time, capacity,
+                (SELECT COUNT(*) FROM event_signups s
+                    WHERE s.opportunityID = opportunities.opportunityID
+                    AND s.status = 'registered') AS registered_count
+            FROM opportunities
+            WHERE orgID = ?
+            AND COALESCE(status, 'open') = 'open'
+            AND (event_date IS NULL OR
+                COALESCE(event_end_date, event_date) >= ?)
+            ORDER BY event_date ASC
+            LIMIT ?
+        """, (orgID, today, limit))
+        return self.cursor.fetchall()
 
     # ── Signups ───────────────────────────────────────────────────────────
     def registerForOpportunity(self, userID, opportunityID):
