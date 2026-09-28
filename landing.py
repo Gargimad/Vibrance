@@ -199,7 +199,6 @@ class Landing(QMainWindow):
         self.volunteerHomePage.tabChanged.connect(
             lambda _i: self._sync_nav_highlight()
         )
-        # New signals from the first-time welcome card
         self.volunteerHomePage.browseOpportunitiesRequested.connect(
             self.show_volunteer_listing_page
         )
@@ -219,7 +218,6 @@ class Landing(QMainWindow):
         self.volunteerListingPage.openLinkRequested.connect(
             self.open_external_link
         )
-        # RSVP success → jump to the volunteer's My Events tab
         self.volunteerListingPage.rsvpSucceeded.connect(
             self._handle_rsvp_success
         )
@@ -309,13 +307,14 @@ class Landing(QMainWindow):
             labels = getattr(self.orgDashboard, "TAB_LABELS", None) \
                 or ["Dashboard"]
             specs = [
-                (("org", i), label, lambda i=i: self.show_org_tab(i))
+                (("org", i), label,
+                 lambda i=i: self._show_org_nav_tab(i))
                 for i, label in enumerate(labels)
             ]
             specs.append((("faq", None), "FAQ", self.show_faq_page))
             return specs
 
-        # Guest — Organize removed
+        # Guest
         return [
             (("listing", None), "Volunteer",
              lambda: self.show_volunteer_listing_page()),
@@ -356,6 +355,12 @@ class Landing(QMainWindow):
                 return ("listing", None)
         elif self.nav_mode == NAV_ORG:
             if page is self.orgDashboard:
+                # Prefer the nav-index method so the form page (which
+                # isn't in the nav) leaves nothing highlighted.
+                fn = getattr(self.orgDashboard, "current_nav_tab", None)
+                if callable(fn):
+                    idx = fn()
+                    return ("org", idx) if idx >= 0 else None
                 current = getattr(self.orgDashboard, "current_tab", None)
                 return ("org", current() if callable(current) else 0)
             if page is self.faqPage:
@@ -397,10 +402,27 @@ class Landing(QMainWindow):
         self.volunteerHomePage.show_tab(idx)
 
     def show_org_tab(self, idx):
+        """Show a stack page directly on the org dashboard."""
         self._goto(self.orgDashboard)
         show = getattr(self.orgDashboard, "show_tab", None)
         if callable(show):
             show(idx)
+
+    def _show_org_nav_tab(self, nav_idx):
+        """
+        Called by the org nav buttons. nav_idx is a position in
+        OrgDashboard.TAB_LABELS, translated to a stack index by
+        the dashboard itself (the form page has no nav button).
+        """
+        self._goto(self.orgDashboard)
+        fn = getattr(self.orgDashboard, "show_nav_tab", None)
+        if callable(fn):
+            fn(nav_idx)
+        else:
+            # Fallback if orgDashboard.py hasn't been updated yet.
+            show = getattr(self.orgDashboard, "show_tab", None)
+            if callable(show):
+                show(nav_idx)
 
     def show_volunteer_listing_page(self, keyword=None):
         if keyword:
@@ -464,7 +486,6 @@ class Landing(QMainWindow):
 
     # ── RSVP callback ─────────────────────────────────────────────────────
     def _handle_rsvp_success(self, opportunity_id):
-        """Volunteer just RSVP'd on the listing page. Jump to My Events."""
         if not self.current_user:
             return
         self._goto(self.volunteerHomePage)

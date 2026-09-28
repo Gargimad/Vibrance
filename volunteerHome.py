@@ -22,14 +22,15 @@ from datetime import date, timedelta
 
 from PyQt6.QtCore import Qt, QPointF, QRectF, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPalette
-from PyQt6.QtWidgets import (
+from PyQt6.QtWidgets import(
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QStackedWidget, QScrollArea, QMessageBox,
-    QCalendarWidget, QLineEdit, QTextBrowser, QCheckBox, QFormLayout,
+    QCalendarWidget, QLineEdit, QCheckBox, QFormLayout,
     QGridLayout, QProgressBar,
 )
 
 import theme
+from chatBubble import ChatView
 
 
 # ── Constants ─────────────────────────────────────────────────────────────
@@ -41,8 +42,8 @@ ORG_PALETTE = [
 ]
 INDEPENDENT_COLOR = "#7F8C8D"
 
-CLAUDE_MODEL = "claude-sonnet-5"
-CLAUDE_URL = "https://api.anthropic.com/v1/messages"
+CLAUDE_MODEL = "openai/gpt-oss-20b"
+CLAUDE_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 TAB_DASHBOARD, TAB_CALENDAR, TAB_EVENTS, TAB_ORGS = 0, 1, 2, 3
 TAB_NOTIFS, TAB_HELP, TAB_PROFILE = 4, 5, 6
@@ -202,42 +203,56 @@ class ChatWorker(QThread):
         self.system = system
 
     def run(self):
-        key = os.environ.get("ANTHROPIC_API_KEY")
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        key = os.environ.get("GROQ_API_KEY")
         if not key:
             self.failed.emit(
-                "The chatbot isn't configured yet (missing ANTHROPIC_API_KEY)."
+                "The assistant isn't configured yet — add GROQ_API_KEY to your .env file."
             )
             return
+
+        # Groq uses OpenAI's message format. Anthropic's "system" field
+        # becomes the first message with role="system".
+        messages = [{"role": "system", "content": self.system}] + self.messages
 
         body = json.dumps({
             "model": CLAUDE_MODEL,
             "max_tokens": 800,
-            "system": self.system,
-            "messages": self.messages,
+            "messages": messages,
         }).encode("utf-8")
+
         req = urllib.request.Request(
             CLAUDE_URL,
             data=body,
             headers={
-                "content-type": "application/json",
-                "x-api-key": key,
-                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key}",
+                "User-Agent": "Moxie/1.0",
             },
         )
+
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 data = json.load(resp)
-            text = "".join(
-                b.get("text", "")
-                for b in data.get("content", [])
-                if b.get("type") == "text"
-            ).strip()
+            # OpenAI-style response: choices[0].message.content
+            text = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
             self.reply.emit(text or "(No response)")
         except urllib.error.HTTPError as e:
-            self.failed.emit(f"The assistant returned an error ({e.code}).")
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", errors="replace")[:200]
+            except Exception:
+                pass
+            self.failed.emit(f"Assistant error {e.code}: {detail}")
         except Exception as e:
             self.failed.emit(f"Couldn't reach the assistant: {e}")
-
 
 # ── Main widget ───────────────────────────────────────────────────────────
 class VolunteerHome(QWidget):
@@ -982,116 +997,92 @@ class VolunteerHome(QWidget):
         sub.setObjectName(theme.EVENT_META_VALUE)
         sub.setWordWrap(True)
 
-        self.chat_view = QTextBrowser()
-        self.chat_view.setOpenExternalLinks(True)
-        self._chat_reset_view()
-
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        self.chat_input = QLineEdit()
-        self.chat_input.setPlaceholderText("Type your question…")
-        self.chat_input.returnPressed.connect(self._send_chat)
-        self.chat_send = QPushButton("Send")
-        self.chat_send.setObjectName(theme.PRIMARY_BTN)
-        self.chat_send.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.chat_send.clicked.connect(self._send_chat)
-        clear = QPushButton("New chat")
-        clear.setObjectName(theme.SECONDARY_BTN)
-        clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        clear.clicked.connect(self._chat_new)
-        row.addWidget(self.chat_input, 1)
-        row.addWidget(self.chat_send)
-        row.addWidget(clear)
+        self.chat = ChatView(
+            greeting="Hi! I'm Moxie — your volunteer sidekick. 🌱 "
+                    "Ask me anything about events, hours, or this app!"
+        )
+        self.chat.set_system_prompt_provider(self._chat_system_prompt)
+        self.chat.set_send_handler(self._dispatch_chat)
 
         lay.addWidget(heading)
         lay.addWidget(sub)
-        lay.addWidget(self.chat_view, 1)
-        lay.addLayout(row)
+        lay.addWidget(self.chat, 1)
         return page
-
-    def _chat_reset_view(self):
-        self.chat_view.setHtml("")
-        self._chat_append(
-            "Assistant",
-            "Hi! I'm your volunteer assistant. How can I help today?"
-        )
-
-    def _chat_new(self):
-        if self._chat_worker and self._chat_worker.isRunning():
-            return
-        self._chat_history = []
-        self._chat_reset_view()
-
-    def _chat_append(self, who, text):
-        safe = html.escape(text).replace("\n", "<br>")
-        self.chat_view.append(f"<p><b>{who}:</b><br>{safe}</p>")
-        sb = self.chat_view.verticalScrollBar()
-        sb.setValue(sb.maximum())
-
     def _chat_system_prompt(self):
         name = (self.user_data or {}).get("first_name") or "the volunteer"
+
+        # Always pull fresh signups — do NOT rely on self._signup_rows,
+        # which is only populated after visiting Calendar/Dashboard.
+        rows = self._db("getSignupsForVolunteer", self.userID, default=[]) or []
+        rows = [r for r in rows if (rget(r, "status", "") or "") != "cancelled"]
+
+        today = date.today()
         upcoming = []
-        today = date.today().isoformat()
-        for r in self._signup_rows:
-            d = str(rget(r, "event_date", ""))[:10]
-            if d >= today:
+        for r in rows:
+            raw = str(rget(r, "event_date", "") or "").strip()
+            if not raw:
+                continue
+            try:
+                # Accept ISO dates; ignore anything unparseable for the "upcoming" list
+                d = date.fromisoformat(raw[:10])
+            except ValueError:
+                # Unparseable (imported free-text date) — include it, but flag it.
+                upcoming.append(
+                    f"- {rget(r, 'title', 'Untitled')} on {raw}"
+                    f" ({rget(r, 'org_name', 'Independent')}) [date format unverified]"
+                )
+                continue
+
+            end_raw = str(rget(r, "event_end_date", "") or "").strip()
+            try:
+                end = date.fromisoformat(end_raw[:10]) if end_raw else d
+            except ValueError:
+                end = d
+
+            if end >= today:
                 upcoming.append(
                     f"- {rget(r, 'title', 'Untitled')} on {date_range(r)}"
                     f"{time_range(r)} ({rget(r, 'org_name', 'Independent')})"
                 )
-        upcoming_txt = "\n".join(upcoming[:10]) or "none"
+
+        upcoming_txt = "\n".join(upcoming[:15]) or "NONE (confirmed) — this user has no upcoming events."
+
         return (
-            "You are the in-app help assistant for a volunteer management "
-            "app. You are talking to " + name + ". Be friendly, concise, "
-            "and practical. App features: Dashboard, Calendar (color-coded by "
-            "organization), My Events (check in, check out, cancel), "
-            "Volunteer (browse and sign up for events), Organizations "
-            "(join or leave), Notifications, Help, and Profile (edit "
-            "details, notification setting, change password). Hours are "
-            "logged from check-in to check-out. Events come from two "
-            "sources: opportunities posted by organizations on Moxie, and "
-            "opportunities imported from the Volunteer Connector public API. "
-            "If you don't know something specific to a particular "
-            "organization or event, say so and suggest contacting the "
-            "organization. Their upcoming events:\n" + upcoming_txt
+            f"You are Moxie, a super friendly in-app help buddy for a volunteer "
+            f"management app. You're chatting with {name}. "
+            "Your vibe: warm, upbeat, encouraging, a tiny bit playful — "
+            "like a helpful friend, not a corporate bot. "
+            "\n\nTone rules:\n"
+            "- Use contractions (you're, that's, let's).\n"
+            "- Sprinkle in light emoji (✨ 🎉 🙌 💛 🌱) — 0-2 per reply.\n"
+            "- Keep replies short: 1-3 sentences unless asked for detail.\n"
+            "- Never say 'As an AI' or 'I am a language model'.\n"
+            "\nIMPORTANT — upcoming events:\n"
+            "The list below is the user's ACTUAL, current signup data pulled "
+            "from the database right now. Do not invent events, do not guess, "
+            "do not say they have none if the list is non-empty. If they ask "
+            "about an event not in the list, tell them it isn't showing in "
+            "their current signups and suggest checking My Events.\n"
+            "Their upcoming events:\n" + upcoming_txt
         )
 
-    def _send_chat(self):
-        text = self.chat_input.text().strip()
-        if not text or (self._chat_worker and self._chat_worker.isRunning()):
-            return
-        self.chat_input.clear()
-        self._chat_append("You", text)
-        self._chat_history.append({"role": "user", "content": text})
-        self._chat_history = self._chat_history[-20:]
-        while self._chat_history and self._chat_history[0]["role"] != "user":
-            self._chat_history.pop(0)
-
-        self._set_chat_busy(True)
+    def _dispatch_chat(self, text):
+        # ChatView already appended the user bubble, set busy, and showed
+        # the typing dots. We only need to kick off the request.
         self._chat_worker = ChatWorker(
-            list(self._chat_history), self._chat_system_prompt(), self
+            list(self.chat.history),
+            self.chat.get_system_prompt(),
+            self,
         )
-        self._chat_worker.reply.connect(self._on_chat_reply)
+        self._chat_worker.reply.connect(self.chat.on_reply)
         self._chat_worker.failed.connect(self._on_chat_failed)
         self._chat_worker.start()
 
-    def _on_chat_reply(self, text):
-        self._chat_history.append({"role": "assistant", "content": text})
-        self._chat_append("Assistant", text)
-        self._set_chat_busy(False)
-
     def _on_chat_failed(self, msg):
-        if self._chat_history and self._chat_history[-1]["role"] == "user":
-            self._chat_history.pop()
-        self._chat_append("Assistant", msg)
-        self._set_chat_busy(False)
-
-    def _set_chat_busy(self, busy):
-        self.chat_input.setEnabled(not busy)
-        self.chat_send.setEnabled(not busy)
-        self.chat_send.setText("…" if busy else "Send")
-        if not busy:
-            self.chat_input.setFocus()
+        # Pop the last user turn so a retry doesn't double up.
+        if self.chat.history and self.chat.history[-1]["role"] == "user":
+            self.chat.history.pop()
+        self.chat.on_error(msg)
 
     # ── 6. Profile ────────────────────────────────────────────────────────
     def _build_profile_page(self):
@@ -1287,7 +1278,7 @@ class VolunteerHome(QWidget):
         self.user_info_label.setText(f"Logged in as: {email}")
 
         self._chat_history = []
-        self._chat_reset_view()
+        self.chat.reset()
         self._signup_rows = []
         self._welcome_dismissed = False
 

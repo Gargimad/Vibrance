@@ -1,13 +1,16 @@
 """
 orgDashboard.py — Organization dashboard.
 
-Three views in a QStackedWidget:
-    0  Overview   stats, next up, recent activity
-    1  List       the org's own opportunities
-    2  Form       create or edit an opportunity
+Four views in a QStackedWidget:
+    0  Overview       stats, next up, recent activity
+    1  List           the org's own opportunities
+    2  Form           create or edit an opportunity  (NOT in the nav)
+    3  Announcements  post + manage announcements
 
-landing.py builds the nav bar from TAB_LABELS. show_tab(idx) is called
-when the user clicks a nav tab.
+landing.py builds the nav bar from TAB_LABELS. Because the form page is
+not a nav destination, TAB_LABELS and the stack indices are not the same
+list — NAV_TO_STACK bridges them. landing.py should call show_nav_tab(i)
+for nav clicks and current_nav_tab() for highlighting.
 """
 
 from PyQt6.QtCore import Qt, QDate
@@ -16,18 +19,24 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit,
     QPushButton, QComboBox, QDateEdit, QCheckBox, QSpinBox, QListWidget,
     QListWidgetItem, QMessageBox, QFrame, QScrollArea, QGridLayout,
-    QStackedWidget, QFileDialog, QSizePolicy, QDialog,
+    QStackedWidget, QFileDialog, QDialog,
 )
 
 import theme
 from eventCard import clear_thumbnail_cache
 
 
-TAB_OVERVIEW, TAB_LIST, TAB_FORM = 0, 1, 2
+TAB_OVERVIEW, TAB_LIST, TAB_FORM, TAB_ANNOUNCEMENTS = 0, 1, 2, 3
 
 
 class OrgDashboard(QWidget):
-    TAB_LABELS = ["Overview", "My opportunities"]
+    TAB_LABELS = ["Overview", "My opportunities", "Announcements"]
+
+    # Which stack index each nav button goes to.
+    # nav 0 → stack 0 (Overview)
+    # nav 1 → stack 1 (List)
+    # nav 2 → stack 3 (Announcements)  ← skips the form page (stack 2)
+    NAV_TO_STACK = [TAB_OVERVIEW, TAB_LIST, TAB_ANNOUNCEMENTS]
 
     def __init__(self, db, on_logout_click=None, on_back_click=None,
                  parent=None):
@@ -45,9 +54,10 @@ class OrgDashboard(QWidget):
         outer.setSpacing(0)
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_overview_page())
-        self.stack.addWidget(self._build_list_page())
-        self.stack.addWidget(self._build_form_page())
+        self.stack.addWidget(self._build_overview_page())       # 0
+        self.stack.addWidget(self._build_list_page())           # 1
+        self.stack.addWidget(self._build_form_page())           # 2
+        self.stack.addWidget(self._build_announcements_page())  # 3
         outer.addWidget(self.stack, 1)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
@@ -59,11 +69,38 @@ class OrgDashboard(QWidget):
         return self.stack.currentIndex()
 
     def show_tab(self, idx):
+        """Directly show a stack page. `idx` is a stack index."""
+        if idx < 0 or idx >= self.stack.count():
+            return
         self.stack.setCurrentIndex(idx)
         if idx == TAB_OVERVIEW:
             self._refresh_overview()
         elif idx == TAB_LIST:
             self._refresh_list()
+        elif idx == TAB_ANNOUNCEMENTS:
+            self._refresh_announcements()
+
+    def show_nav_tab(self, nav_idx):
+        """
+        Called by landing.py's nav bar. `nav_idx` is a position in
+        TAB_LABELS (0..len-1). Translated to the right stack page.
+        """
+        if nav_idx < 0 or nav_idx >= len(self.NAV_TO_STACK):
+            return
+        self.show_tab(self.NAV_TO_STACK[nav_idx])
+
+    def current_nav_tab(self):
+        """
+        Inverse of show_nav_tab — used by landing to highlight the
+        active nav button. Returns the TAB_LABELS index of the current
+        page, or -1 if the current page isn't a nav destination
+        (e.g. the form).
+        """
+        stack_idx = self.stack.currentIndex()
+        try:
+            return self.NAV_TO_STACK.index(stack_idx)
+        except ValueError:
+            return -1
 
     # ── 0. Overview page ──────────────────────────────────────────────────
     def _build_overview_page(self):
@@ -87,10 +124,10 @@ class OrgDashboard(QWidget):
         self.org_title.setObjectName(theme.FORM_TITLE)
         self.org_subtitle = QLabel("")
         self.org_subtitle.setObjectName(theme.FORM_SUBTITLE)
+        self.org_subtitle.setWordWrap(True)
         lay.addWidget(self.org_title)
         lay.addWidget(self.org_subtitle)
 
-        # Stat tiles
         tiles = QHBoxLayout()
         tiles.setSpacing(10)
         self.tile_values = {}
@@ -100,7 +137,7 @@ class OrgDashboard(QWidget):
             ("signups", "Total signups"),
             ("volunteers", "Unique volunteers"),
             ("hours", "Hours logged"),
-            ("filled", "Signups per opening"),
+            ("announce", "Announcements"),
         ]:
             tile = QFrame()
             tile.setObjectName(theme.EVENT_CARD)
@@ -118,7 +155,6 @@ class OrgDashboard(QWidget):
             tiles.addWidget(tile, 1)
         lay.addLayout(tiles)
 
-        # 2-up grid: Next up + Recent activity
         grid = QGridLayout()
         grid.setSpacing(16)
         grid.setColumnStretch(0, 1)
@@ -151,11 +187,13 @@ class OrgDashboard(QWidget):
         new_btn.clicked.connect(self._start_new)
         al.addWidget(new_btn)
 
-        list_btn = QPushButton("Manage opportunities")
-        list_btn.setObjectName(theme.SECONDARY_BTN)
-        list_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        list_btn.clicked.connect(lambda: self.show_tab(TAB_LIST))
-        al.addWidget(list_btn)
+        ann_btn = QPushButton("Post announcement")
+        ann_btn.setObjectName(theme.SECONDARY_BTN)
+        ann_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        ann_btn.clicked.connect(
+            lambda: self.show_tab(TAB_ANNOUNCEMENTS)
+        )
+        al.addWidget(ann_btn)
 
         lay.addWidget(actions_card)
         lay.addStretch(1)
@@ -183,7 +221,11 @@ class OrgDashboard(QWidget):
                 "QPushButton { border: none; color: #2E86DE; }"
                 "QPushButton:hover { text-decoration: underline; }"
             )
-            b.clicked.connect(lambda _, i=tab: self.show_tab(i))
+            # `tab` here is a nav index, so use show_nav_tab.
+            b.clicked.connect(lambda _, i=tab: self.show_nav_tab(
+                OrgDashboard.NAV_TO_STACK.index(tab)
+                if tab in OrgDashboard.NAV_TO_STACK else 0
+            ) if False else self.show_tab(tab))
             head.addWidget(b)
         v.addLayout(head)
 
@@ -236,7 +278,6 @@ class OrgDashboard(QWidget):
         for lay in (self.overview_next, self.overview_activity):
             self._clear_all(lay)
 
-        # Stats
         stats = self._db_call("getOrgStats", self.org["orgID"], default={}) or {}
         open_count = stats.get("open_opportunities", 0)
         total = stats.get("total_opportunities", 0)
@@ -244,16 +285,18 @@ class OrgDashboard(QWidget):
         volunteers = stats.get("unique_volunteers", 0)
         hours = stats.get("total_hours", 0.0)
 
-        per_open = f"{signups / total:.1f}" if total else "—"
+        anns = self._db_call(
+            "getAnnouncementsForOrg", self.org["orgID"], default=[]
+        ) or []
+        ann_count = len(anns)
 
         self.tile_values["open"].setText(str(open_count))
         self.tile_values["total"].setText(str(total))
         self.tile_values["signups"].setText(str(signups))
         self.tile_values["volunteers"].setText(str(volunteers))
         self.tile_values["hours"].setText(f"{hours:.1f}")
-        self.tile_values["filled"].setText(per_open)
+        self.tile_values["announce"].setText(str(ann_count))
 
-        # Next up
         upcoming = self._db_call(
             "getUpcomingForOrg", self.org["orgID"], default=[]
         ) or []
@@ -277,7 +320,6 @@ class OrgDashboard(QWidget):
                 title, f"{date_txt} · {spots}"
             ))
 
-        # Recent activity
         recent = self._db_call(
             "getRecentSignupsForOrg", self.org["orgID"], default=[]
         ) or []
@@ -426,8 +468,6 @@ class OrgDashboard(QWidget):
         self.f_end_date.setCalendarPopup(True)
         self.f_end_date.setDate(QDate.currentDate())
         self.f_end_date.setDisplayFormat("yyyy-MM-dd")
-        self.f_end_date.setSpecialValueText("Same day")
-        # Minimum date is the start date, enforced in _save
 
         self.f_start = QLineEdit()
         self.f_start.setPlaceholderText("HH:MM (e.g. 09:00)")
@@ -490,7 +530,6 @@ class OrgDashboard(QWidget):
         form.addWidget(QLabel("Contact email"), r, 2)
         form.addWidget(self.f_contact_email, r, 3); r += 1
 
-        # Thumbnail
         self.thumb_lbl = QLabel("No image attached")
         self.thumb_lbl.setObjectName(theme.EVENT_META_VALUE)
 
@@ -597,7 +636,6 @@ class OrgDashboard(QWidget):
         self.thumb_lbl.setText(self._pending_thumbnail or "No image attached")
         self.show_tab(TAB_FORM)
 
-    # ── Thumbnail ─────────────────────────────────────────────────────────
     def _pick_thumbnail(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Choose thumbnail",
@@ -611,7 +649,6 @@ class OrgDashboard(QWidget):
         self._pending_thumbnail = None
         self.thumb_lbl.setText("No image attached")
 
-    # ── Cancel with notifications ─────────────────────────────────────────
     def _cancel_selected(self):
         item = self.list_widget.currentItem()
         if not item:
@@ -626,20 +663,17 @@ class OrgDashboard(QWidget):
         ) != QMessageBox.StandardButton.Yes:
             return
 
-        # Find volunteers to notify BEFORE we mark it cancelled
         try:
             signups = self.db.getSignupsForOpportunity(oid)
         except Exception as e:
             print("getSignupsForOpportunity failed:", e)
             signups = []
 
-        # Snapshot the title while it's still visible
         row = self.db.getOpportunityByID(oid)
         title = row["title"] if row else "an event"
 
         self.db.updateOpportunity(oid, status="cancelled")
 
-        # Notify everyone who was registered
         for s in signups:
             if (s["status"] or "") != "registered":
                 continue
@@ -655,7 +689,6 @@ class OrgDashboard(QWidget):
 
         self._refresh_list()
 
-    # ── View signups ──────────────────────────────────────────────────────
     def _view_signups_selected(self):
         item = self.list_widget.currentItem()
         if not item:
@@ -676,7 +709,6 @@ class OrgDashboard(QWidget):
         title = row["title"] if row else "Opportunity"
         SignupsDialog(self, title, rows).exec()
 
-    # ── Save ──────────────────────────────────────────────────────────────
     def _save(self):
         if not self.org:
             return
@@ -695,8 +727,6 @@ class OrgDashboard(QWidget):
             )
             return
 
-        # If the end date equals the start date, store NULL so single-day
-        # events behave exactly as before.
         end_iso = end_date.toString("yyyy-MM-dd")
         start_iso = start_date.toString("yyyy-MM-dd")
         stored_end = None if end_iso == start_iso else end_iso
@@ -755,6 +785,195 @@ class OrgDashboard(QWidget):
         self._refresh_list()
         self.show_tab(TAB_LIST)
 
+    # ── 3. Announcements page ─────────────────────────────────────────────
+    def _build_announcements_page(self):
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(40, 20, 40, 20)
+        outer.setSpacing(14)
+
+        heading = QLabel("Post an update")
+        heading.setObjectName(theme.SECTION_TITLE)
+
+        sub = QLabel(
+            "Announcements go to everyone who follows your organization — "
+            "members and volunteers who've signed up for your events. "
+            "They'll show up in their notifications tab."
+        )
+        sub.setObjectName(theme.EVENT_META_VALUE)
+        sub.setWordWrap(True)
+
+        outer.addWidget(heading)
+        outer.addWidget(sub)
+
+        compose = QFrame()
+        compose.setObjectName(theme.EVENT_CARD)
+        compose.setStyleSheet(
+            f"QFrame#{theme.EVENT_CARD} "
+            "{ border-left: 6px solid #B1A2A8; }"
+        )
+        cl = QVBoxLayout(compose)
+        cl.setContentsMargins(18, 14, 18, 14)
+        cl.setSpacing(8)
+
+        self.ann_title = QLineEdit()
+        self.ann_title.setPlaceholderText(
+            "Headline — e.g. Saturday cleanup moved to Sunday"
+        )
+        cl.addWidget(self.ann_title)
+
+        self.ann_body = QTextEdit()
+        self.ann_body.setPlaceholderText(
+            "Write the details volunteers need to know…"
+        )
+        self.ann_body.setFixedHeight(80)
+        cl.addWidget(self.ann_body)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.ann_pinned = QCheckBox("Pin to the top of the feed")
+        row.addWidget(self.ann_pinned)
+        row.addStretch(1)
+
+        post_btn = QPushButton("Post announcement")
+        post_btn.setObjectName(theme.PRIMARY_BTN)
+        post_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        post_btn.clicked.connect(self._post_announcement)
+        row.addWidget(post_btn)
+        cl.addLayout(row)
+
+        outer.addWidget(compose)
+
+        past_lbl = QLabel("Past announcements")
+        past_lbl.setObjectName(theme.EVENT_TITLE_LIST)
+        outer.addWidget(past_lbl)
+
+        self.ann_scroll = QScrollArea()
+        self.ann_scroll.setWidgetResizable(True)
+        self.ann_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.ann_scroll.setObjectName(theme.HOME_SCROLL)
+
+        content = QWidget()
+        self.ann_layout = QVBoxLayout(content)
+        self.ann_layout.setContentsMargins(0, 0, 0, 0)
+        self.ann_layout.setSpacing(10)
+        self.ann_layout.addStretch(1)
+        self.ann_scroll.setWidget(content)
+        outer.addWidget(self.ann_scroll, 1)
+
+        return page
+
+    def _refresh_announcements(self):
+        self._clear_all(self.ann_layout)
+        if not self.org:
+            return
+        rows = self._db_call(
+            "getAnnouncementsForOrg", self.org["orgID"], default=[]
+        ) or []
+
+        if not rows:
+            self.ann_layout.insertWidget(0, self._overview_text(
+                "No announcements yet. Post one above to reach your "
+                "volunteers."
+            ))
+            return
+
+        for r in rows:
+            card = QFrame()
+            card.setObjectName(theme.EVENT_CARD)
+            v = QVBoxLayout(card)
+            v.setContentsMargins(16, 12, 16, 12)
+            v.setSpacing(4)
+
+            header = QHBoxLayout()
+            title = QLabel(r["title"])
+            title.setObjectName(theme.EVENT_TITLE_LIST)
+            header.addWidget(title)
+            if r["pinned"]:
+                pin = QLabel("PINNED")
+                pin.setObjectName(theme.EVENT_STATUS_BADGE)
+                header.addWidget(pin)
+            header.addStretch(1)
+            ts = QLabel(str(r["created_at"] or "")[:19])
+            ts.setObjectName(theme.EVENT_META_VALUE)
+            header.addWidget(ts)
+            v.addLayout(header)
+
+            body = QLabel(r["body"])
+            body.setObjectName(theme.EVENT_META_VALUE)
+            body.setWordWrap(True)
+            v.addWidget(body)
+
+            row = QHBoxLayout()
+            row.addStretch(1)
+
+            pin_btn = QPushButton("Unpin" if r["pinned"] else "Pin")
+            pin_btn.setObjectName(theme.SECONDARY_BTN)
+            pin_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            pin_btn.clicked.connect(
+                lambda _, aid=r["announcementID"],
+                       p=not r["pinned"]: self._toggle_pin(aid, p)
+            )
+            row.addWidget(pin_btn)
+
+            del_btn = QPushButton("Delete")
+            del_btn.setObjectName(theme.SECONDARY_BTN)
+            del_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            del_btn.clicked.connect(
+                lambda _, aid=r["announcementID"]: self._delete_announcement(aid)
+            )
+            row.addWidget(del_btn)
+
+            v.addLayout(row)
+            self.ann_layout.insertWidget(self.ann_layout.count() - 1, card)
+
+    def _post_announcement(self):
+        if not self.org:
+            return
+        title = self.ann_title.text().strip()
+        body = self.ann_body.toPlainText().strip()
+        if not title or not body:
+            QMessageBox.warning(
+                self, "Missing fields",
+                "Both a title and a message are required."
+            )
+            return
+
+        ann_id = self._db_call(
+            "addAnnouncement",
+            self.org["orgID"], title, body,
+            1 if self.ann_pinned.isChecked() else 0,
+            default=None,
+        )
+        if not ann_id:
+            QMessageBox.warning(
+                self, "Post failed",
+                "Could not post the announcement."
+            )
+            return
+
+        self.ann_title.clear()
+        self.ann_body.clear()
+        self.ann_pinned.setChecked(False)
+        QMessageBox.information(
+            self, "Posted",
+            "Your volunteers have been notified."
+        )
+        self._refresh_announcements()
+
+    def _toggle_pin(self, announcementID, pin):
+        self._db_call("setAnnouncementPinned", announcementID, pin)
+        self._refresh_announcements()
+
+    def _delete_announcement(self, announcementID):
+        if QMessageBox.question(
+            self, "Delete announcement",
+            "Delete this announcement? This cannot be undone."
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self._db_call("deleteAnnouncement", announcementID)
+        self._refresh_announcements()
+
     # ── Small wrapper matching volunteerHome._db ──────────────────────────
     def _db_call(self, method, *args, default=None):
         fn = getattr(self.db, method, None) if self.db else None
@@ -770,8 +989,6 @@ class OrgDashboard(QWidget):
 
 # ── Signups dialog ────────────────────────────────────────────────────────
 class SignupsDialog(QDialog):
-    """Modal list of everyone who RSVP'd for an opportunity."""
-
     def __init__(self, parent, title, rows):
         super().__init__(parent)
         self.setObjectName(theme.EVENT_DETAILS_DIALOG)

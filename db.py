@@ -199,9 +199,23 @@ class Database:
             FOREIGN KEY(orgID) REFERENCES organizations(orgID) ON DELETE CASCADE
         );
         """)
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS announcements (
+            announcementID  INTEGER PRIMARY KEY AUTOINCREMENT,
+            orgID           INTEGER NOT NULL,
+            title           TEXT NOT NULL,
+            body            TEXT NOT NULL,
+            pinned          INTEGER DEFAULT 0,
+            created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(orgID) REFERENCES organizations(orgID) ON DELETE CASCADE
+        );
+        """)
 
         self.cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_opp_org ON opportunities(orgID)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ann_org ON announcements(orgID)"
         )
         self.cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_signup_user ON event_signups(userID)"
@@ -477,6 +491,7 @@ class Database:
                o.created_at, o.updated_at, o.thumbnail, o.source_id,
                COALESCE(o.website_link, org.website_link) AS website_link,
                org.org_name, org.orgID,
+               CASE WHEN org.userID IS NULL THEN 0 ELSE 1 END AS is_moxie_org,
                (SELECT COUNT(*) FROM event_signups s
                 WHERE s.opportunityID = o.opportunityID
                   AND s.status = 'registered') AS registered_count
@@ -867,7 +882,123 @@ class Database:
             WHERE notificationID = ?
         """, (notificationID,))
         self.connection.commit()
+    # ── Announcements ─────────────────────────────────────────────────────
 
+    def addAnnouncement(self, orgID, title, body, pinned=0):
+        """
+        Post an announcement from an org. Returns the new announcementID,
+        or None on failure.
+
+        Side effect: notifies every volunteer who is either a member of
+        this org, or has signed up for an opportunity posted by this org.
+        """
+        title = (title or "").strip()
+        body = (body or "").strip()
+        if not title or not body:
+            return None
+        try:
+            self.cursor.execute("""
+                INSERT INTO announcements (orgID, title, body, pinned)
+                VALUES (?, ?, ?, ?)
+            """, (orgID, title, body, 1 if pinned else 0))
+            ann_id = self.cursor.lastrowid
+
+            # Find everyone who should hear about this.
+            recipients = self._announcement_recipients(orgID)
+
+            # Insert a notification per recipient.
+            preview = body[:120] + ("…" if len(body) > 120 else "")
+            for uid in recipients:
+                self.cursor.execute("""
+                    INSERT INTO notifications
+                    (userID, message, type, related_opportunityID)
+                    VALUES (?, ?, 'announcement', NULL)
+                """, (uid, f"{title} — {preview}"))
+
+            self.connection.commit()
+            return ann_id
+        except sqlite3.Error as e:
+            print("addAnnouncement error:", e)
+            return None
+
+    def _announcement_recipients(self, orgID):
+        """
+        Returns a set of userIDs who should receive notifications about
+        announcements from this org:
+        • anyone who joined the org (org_members)
+        • anyone who signed up for an opportunity posted by the org
+        """
+        ids = set()
+        self.cursor.execute(
+            "SELECT userID FROM org_members WHERE orgID = ?", (orgID,)
+        )
+        for r in self.cursor.fetchall():
+            ids.add(r["userID"])
+
+        self.cursor.execute("""
+            SELECT DISTINCT s.userID
+            FROM event_signups s
+            JOIN opportunities o ON s.opportunityID = o.opportunityID
+            WHERE o.orgID = ?
+            AND s.status = 'registered'
+        """, (orgID,))
+        for r in self.cursor.fetchall():
+            ids.add(r["userID"])
+        return ids
+
+    def getAnnouncementsForOrg(self, orgID, limit=50):
+        """Announcements posted by this org, pinned first, newest first."""
+        self.cursor.execute("""
+            SELECT announcementID, orgID, title, body, pinned, created_at
+            FROM announcements
+            WHERE orgID = ?
+            ORDER BY pinned DESC, created_at DESC
+            LIMIT ?
+        """, (orgID, limit))
+        return self.cursor.fetchall()
+
+    def deleteAnnouncement(self, announcementID):
+        self.cursor.execute(
+            "DELETE FROM announcements WHERE announcementID = ?",
+            (announcementID,),
+        )
+        self.connection.commit()
+        return self.cursor.rowcount > 0
+
+    def setAnnouncementPinned(self, announcementID, pinned):
+        self.cursor.execute(
+            "UPDATE announcements SET pinned = ? WHERE announcementID = ?",
+            (1 if pinned else 0, announcementID),
+        )
+        self.connection.commit()
+        return self.cursor.rowcount > 0
+
+    def getAnnouncementsForVolunteer(self, userID, limit=50):
+        """
+        Announcements from every org the volunteer is connected to:
+        • orgs they've joined
+        • orgs whose opportunities they've signed up for
+        Pinned first, then newest first.
+        """
+        self.cursor.execute("""
+            SELECT a.announcementID, a.orgID, a.title, a.body, a.pinned,
+                a.created_at,
+                org.org_name,
+                CASE WHEN a.pinned = 1 THEN 0 ELSE 1 END AS pinned_rank
+            FROM announcements a
+            JOIN organizations org ON a.orgID = org.orgID
+            WHERE a.orgID IN (
+                SELECT orgID FROM org_members WHERE userID = ?
+                UNION
+                SELECT DISTINCT o.orgID
+                FROM event_signups s
+                JOIN opportunities o ON s.opportunityID = o.opportunityID
+                WHERE s.userID = ? AND s.status = 'registered'
+            )
+            ORDER BY pinned_rank ASC, a.created_at DESC
+            LIMIT ?
+        """, (userID, userID, limit))
+        return self.cursor.fetchall()
     # ── Shutdown ──────────────────────────────────────────────────────────
     def close(self):
         try:

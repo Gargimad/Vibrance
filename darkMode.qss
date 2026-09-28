@@ -723,19 +723,29 @@ QScrollBar::add-page, QScrollBar::sub-page {
 #EventCard {
     background-color: #3A2551;
     border: 1px solid #5A4470;
-    border-radius: 0px;
+    border-radius: 14px;
 }
 #EventCard:hover {
     border: 1px solid #B1A2A8;
 }
 
+#EventCardMoxie {
+    background-color: #3A2551;
+    border: 2px solid #B1A2A8;
+    border-radius: 14px;
+}
+#EventCardMoxie:hover {
+    border: 2px solid #D8CBC7;
+}
+
+/* Round only the top corners of the thumbnail so it clips neatly
+   inside the rounded card. */
 #EventThumb {
-    background-color: #EFF1F4;
+    background-color: #26152F;
     border: none;
     color: #A091A8;
     font-size: 12px;
 }
-
 #EventCategoryBadge {
     background-color: #B1A2A8;
     color: #2D1A3E;

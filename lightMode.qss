@@ -718,22 +718,31 @@ QScrollBar::add-page, QScrollBar::sub-page {
 }
 
 /* ---- Event Card (grid + list) ---- */
+/* ---- Event Card (grid + list) ---- */
 #EventCard {
-    background-color: #F5F0EE;
-    border: 1px solid #BFAFB3;
-    border-radius: 0px;
+    background-color: #FFFFFF;
+    border: 1px solid #D8DCE3;
+    border-radius: 14px;
 }
 #EventCard:hover {
-    border: 1px solid #3D4BA8;
+    border: 1px solid #B1A2A8;
+}
+
+#EventCardMoxie {
+    background-color: #FFFFFF;
+    border: 2px solid #B1A2A8;
+    border-radius: 14px;
+}
+#EventCardMoxie:hover {
+    border: 2px solid #8A7A82;
 }
 
 #EventThumb {
-    background-color: #FBF8F7;
+    background-color: #F1ECEE;
     border: none;
-    color: #6B5B77;
+    color: #7A6F73;
     font-size: 12px;
 }
-
 #EventCategoryBadge {
     background-color: #3D4BA8;
     color: #F5F0EE;

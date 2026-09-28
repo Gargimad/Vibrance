@@ -2,21 +2,13 @@
 eventCard.py — The opportunity card used on the home carousels and the
 volunteer listing page.
 
-Reads a sqlite3.Row (or dict) from Database._opportunity_base_query() and
-renders it in one of two modes:
-    "grid"  — fixed 300×465 tile for the grid view and home carousels
-    "list"  — horizontal row for the list view
+Two card variants, styled entirely by QSS:
+    • "EventCard"       imported orgs (Volunteer Connector)
+    • "EventCardMoxie"  Moxie-registered orgs, with a "Verified on Moxie"
+                        pill and a "Sign up" button label
 
-Thumbnails:
-    The `thumbnail` column may contain either
-      • a local file path ("assets/foo.png"), or
-      • an HTTP(S) URL ("https://.../logo.png")
-    URLs are downloaded once, cached on disk in a `.thumb_cache` folder,
-    then loaded from disk on subsequent renders.
-
-    Images are fit-and-letterboxed (KeepAspectRatio, centered) so entire
-    logos are visible regardless of aspect ratio. The empty margins show
-    the EventThumb background from the active QSS theme.
+Rounded corners and card colors live in lightMode.qss / darkMode.qss.
+This file only decides *which* object name to use.
 """
 
 import hashlib
@@ -24,39 +16,49 @@ import os
 import urllib.request
 import urllib.error
 
-from PyQt6.QtCore import Qt, QByteArray, pyqtSignal
-from PyQt6.QtGui import QPixmap, QCursor, QPainter
+from PyQt6.QtCore import Qt, QByteArray, pyqtSignal, QRectF
+from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPainterPath, QColor
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QWidget,
 )
 
 import theme
 
-# Fallback for missing/broken images
 FALLBACK_IMAGE = theme.asset("noThumbnail.png")
-
-# Where downloaded thumbnails are cached on disk.
 THUMB_CACHE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".thumb_cache"
 )
 
-# In-memory LRU so we don't re-decode the same image on every repaint.
 _PIXMAP_CACHE = {}
 _PIXMAP_CACHE_LIMIT = 300
 
 USER_AGENT = "Moxie/1.0"
 
+# Corner radius used when we round the image itself.
+THUMB_RADIUS = 13
+
+# Inline style for the "Verified on Moxie" pill. Kept in Python because
+# it's a one-off element whose color depends on the accent, not the
+# theme. If you'd rather move it to QSS, add a rule for #VerifiedPill.
+VERIFIED_PILL_STYLE = """
+QLabel {
+    background-color: #B1A2A8;
+    color: #2D1A3E;
+    border-radius: 9px;
+    padding: 3px 9px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+"""
+
 
 def clear_thumbnail_cache():
-    """Clear the in-memory cache. Call after an org edits a thumbnail."""
     _PIXMAP_CACHE.clear()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# URL → bytes, with disk cache
-# ─────────────────────────────────────────────────────────────────────────────
 def _cache_path_for(url: str) -> str:
-    """Stable filename per URL so cache hits survive across runs."""
     h = hashlib.sha1(url.encode("utf-8")).hexdigest()
     ext = os.path.splitext(url.split("?")[0])[1].lower()
     if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"):
@@ -65,21 +67,14 @@ def _cache_path_for(url: str) -> str:
 
 
 def _fetch_remote_bytes(url: str, timeout: int = 8) -> bytes:
-    """
-    Download the image at `url`, caching to disk. Returns raw bytes or b"".
-    Never raises — network problems just return empty and the card falls
-    back to the placeholder.
-    """
     os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
     cache_path = _cache_path_for(url)
-
     if os.path.exists(cache_path):
         try:
             with open(cache_path, "rb") as f:
                 return f.read()
         except OSError:
             pass
-
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -87,32 +82,39 @@ def _fetch_remote_bytes(url: str, timeout: int = 8) -> bytes:
     except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
         print(f"[thumb] fetch failed for {url[:60]}: {e}")
         return b""
-
     try:
         with open(cache_path, "wb") as f:
             f.write(data)
     except OSError as e:
         print(f"[thumb] cache write failed: {e}")
-
     return data
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Thumbnail loader (path string, URL, or raw bytes)
-# ─────────────────────────────────────────────────────────────────────────────
-def _fit_centered(pixmap, width, height):
+def _fit_centered(pixmap, width, height, radius=None):
     """
-    Scale the pixmap to fit entirely inside (width, height) and center it
-    on a transparent canvas of exactly that size. Nothing is cropped.
+    Scale pixmap to fit inside (width, height), center it on a canvas of
+    that size, and optionally round the canvas corners.
     """
     scaled = pixmap.scaled(
         width, height,
         Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
+
     canvas = QPixmap(width, height)
     canvas.fill(Qt.GlobalColor.transparent)
+
     painter = QPainter(canvas)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+    if radius:
+        path = QPainterPath()
+        path.addRoundedRect(
+            QRectF(0, 0, width, height), radius, radius
+        )
+        painter.setClipPath(path)
+
     painter.drawPixmap(
         (width - scaled.width()) // 2,
         (height - scaled.height()) // 2,
@@ -122,21 +124,12 @@ def _fit_centered(pixmap, width, height):
     return canvas
 
 
-def load_thumbnail_pixmap(blob, width, height, key=None):
-    """
-    blob: one of
-      • None / "" — falls back to placeholder
-      • a local file path
-      • an http(s) URL
-      • raw image bytes (from a BLOB column)
-    Returns a fit-and-centered QPixmap or None.
-    """
-    cache_key = (key, width, height) if key is not None else None
+def load_thumbnail_pixmap(blob, width, height, key=None, radius=None):
+    cache_key = (key, width, height, radius) if key is not None else None
     if cache_key and cache_key in _PIXMAP_CACHE:
         return _PIXMAP_CACHE[cache_key]
 
     pixmap = QPixmap()
-
     if isinstance(blob, str) and blob:
         if blob.startswith("http://") or blob.startswith("https://"):
             data = _fetch_remote_bytes(blob)
@@ -156,7 +149,7 @@ def load_thumbnail_pixmap(blob, width, height, key=None):
     if pixmap.isNull():
         return None
 
-    result = _fit_centered(pixmap, width, height)
+    result = _fit_centered(pixmap, width, height, radius=radius)
 
     if cache_key:
         if len(_PIXMAP_CACHE) >= _PIXMAP_CACHE_LIMIT:
@@ -178,7 +171,6 @@ def truncate_text(text, max_len):
 
 
 def build_badges(category, is_remote, location, status):
-    """Reusable badge row — also used by EventDetailsDialog."""
     labels = []
     if category:
         cat = QLabel(category)
@@ -229,8 +221,8 @@ class EventCard(QFrame):
     def __init__(self, row, view_mode="grid", parent=None,
                  current_volunteer_id=None):
         super().__init__(parent)
-        self.setObjectName(theme.EVENT_CARD)
-        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        # Which QSS variant? Moxie orgs get the accent border.
         self.row = row
         self.view_mode = view_mode
         self.current_volunteer_id = current_volunteer_id
@@ -242,6 +234,16 @@ class EventCard(QFrame):
                 return default
             return v if v is not None else default
 
+        try:
+            self.is_moxie_org = bool(int(g("is_moxie_org", 0) or 0))
+        except (TypeError, ValueError):
+            self.is_moxie_org = False
+
+        self.setObjectName(
+            "EventCardMoxie" if self.is_moxie_org else theme.EVENT_CARD
+        )
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
         self.opportunityID = g("opportunityID", 0)
         self.title = g("title", "Untitled event")
         self.description = g("description", "")
@@ -249,6 +251,7 @@ class EventCard(QFrame):
         self.location = g("location", "")
         self.is_remote = bool(g("is_remote", 0))
         self.event_date = g("event_date", "")
+        self.event_end_date = g("event_end_date", "")
         self.start_time = g("start_time", "")
         self.end_time = g("end_time", "")
         self.capacity = g("capacity", None)
@@ -272,19 +275,38 @@ class EventCard(QFrame):
 
     # ── shared sub-builders ───────────────────────────────────────────────
     def _make_thumbnail(self, w, h):
-        thumb = QLabel()
+        """
+        Returns a widget containing the (rounded) image and, for Moxie
+        orgs, a small "Verified on Moxie" pill overlaid on the top-left.
+        """
+        wrap = QWidget()
+        wrap.setFixedSize(w, h)
+        wrap.setStyleSheet("background: transparent;")
+
+        thumb = QLabel(wrap)
         thumb.setObjectName(theme.EVENT_THUMB)
-        thumb.setFixedSize(w, h)
+        thumb.setGeometry(0, 0, w, h)
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         thumb.setScaledContents(False)
+
         pixmap = load_thumbnail_pixmap(
-            self.thumbnail, w, h, key=self.opportunityID or None
+            self.thumbnail, w, h,
+            key=self.opportunityID or None,
+            radius=THUMB_RADIUS,
         )
         if pixmap is not None:
             thumb.setPixmap(pixmap)
         else:
             thumb.setText("No image")
-        return thumb
+
+        if self.is_moxie_org:
+            pill = QLabel("✓ Verified on Moxie", wrap)
+            pill.setStyleSheet(VERIFIED_PILL_STYLE)
+            pill.adjustSize()
+            pill.move(10, 10)
+            pill.raise_()
+
+        return wrap
 
     def _make_badges(self, with_org=False):
         row = QHBoxLayout()
@@ -310,7 +332,7 @@ class EventCard(QFrame):
 
     def _rsvp_label(self):
         if self.status == "open":
-            return "RSVP"
+            return "Sign up" if self.is_moxie_org else "RSVP"
         if self.status == "full":
             return "Full"
         return self.status.capitalize()
@@ -322,8 +344,8 @@ class EventCard(QFrame):
         if self.status == "open":
             btn.setEnabled(True)
             btn.setToolTip(
-                "RSVP for this event" if self.current_volunteer_id
-                else "Log in as a volunteer to RSVP"
+                "Sign up for this event" if self.current_volunteer_id
+                else "Log in as a volunteer to sign up"
             )
         else:
             btn.setEnabled(False)
@@ -332,7 +354,11 @@ class EventCard(QFrame):
         return btn
 
     def _date_text(self):
-        text = self.event_date or "TBD"
+        start = self.event_date or "TBD"
+        end = self.event_end_date or ""
+        text = start
+        if end and end != start:
+            text = f"{start} → {end}"
         if self.start_time and self.end_time:
             text += f" · {self.start_time}–{self.end_time}"
         elif self.start_time:
