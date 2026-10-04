@@ -40,6 +40,7 @@ NOTIF_TYPES = {
     "join_org": ("Joined an organization", "#2E86DE"),
     "leave_org": ("Left an organization", "#7F8C8D"),
     "opportunity_cancelled": ("Event cancelled", "#C0392B"),
+    "event_reminder": ("Event reminder", "#E67E22"),
 }
 DEFAULT_NOTIF = ("Update", "#7F8C8D")
 

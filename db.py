@@ -26,6 +26,7 @@ Schema:
 import os
 import sqlite3
 import hashlib
+import math
 import secrets
 from datetime import datetime, timedelta
 
@@ -319,6 +320,7 @@ class Database:
             ("verified_at", "TEXT"),
             ("no_show", "INTEGER DEFAULT 0"),
             ("org_notes", "TEXT"),
+            ("reminder_sent", "INTEGER DEFAULT 0"),
         ):
             if col not in existing:
                 self.cursor.execute(
@@ -1190,7 +1192,7 @@ class Database:
         self.cursor.execute("""
             UPDATE event_signups SET check_in_time = ?
             WHERE userID = ? AND opportunityID = ?
-            AND check_in_time IS NULL
+            AND status = 'registered' AND check_in_time IS NULL
         """, (now, userID, opportunityID))
         self.connection.commit()
         return self.cursor.rowcount > 0
@@ -1203,6 +1205,7 @@ class Database:
                 hours_logged = ROUND(
                     (julianday(?) - julianday(check_in_time)) * 24.0, 2)
             WHERE userID = ? AND opportunityID = ?
+            AND status = 'registered'
             AND check_in_time IS NOT NULL AND check_out_time IS NULL
         """, (now, now, userID, opportunityID))
         self.connection.commit()
@@ -1235,7 +1238,7 @@ class Database:
             FROM event_signups s
             JOIN users u ON s.userID = u.userID
             LEFT JOIN volunteer_profiles vp ON u.userID = vp.userID
-            WHERE s.opportunityID = ?
+            WHERE s.opportunityID = ? AND s.status = 'registered'
             ORDER BY s.signup_time ASC
         """, (opportunityID,))
         return self.cursor.fetchall()
@@ -1251,7 +1254,7 @@ class Database:
             FROM event_signups s
             JOIN users u ON s.userID = u.userID
             LEFT JOIN volunteer_profiles vp ON u.userID = vp.userID
-            WHERE s.opportunityID = ?
+            WHERE s.opportunityID = ? AND s.status = 'registered'
             ORDER BY vp.last_name ASC, vp.first_name ASC
         """, (opportunityID,))
         return self.cursor.fetchall()
@@ -1379,12 +1382,17 @@ class Database:
 
     def verifySignupHours(self, signupID, verifiedBy, hours=None):
         try:
+            if hours is not None:
+                hours = float(hours)
+                if not math.isfinite(hours) or hours < 0:
+                    return False
             if hours is None:
                 self.cursor.execute("""
                     UPDATE event_signups
                     SET verified = 1, verified_by = ?,
                         verified_at = CURRENT_TIMESTAMP
-                    WHERE signupID = ?
+                    WHERE signupID = ? AND status = 'registered'
+                    AND no_show = 0
                 """, (verifiedBy, signupID))
             else:
                 self.cursor.execute("""
@@ -1392,12 +1400,15 @@ class Database:
                     SET verified = 1, verified_by = ?,
                         verified_at = CURRENT_TIMESTAMP,
                         hours_logged = ?
-                    WHERE signupID = ?
+                    WHERE signupID = ? AND status = 'registered'
+                    AND no_show = 0
                 """, (verifiedBy, float(hours), signupID))
             self.connection.commit()
-            return True
+            return self.cursor.rowcount > 0
         except sqlite3.Error as e:
             print("verifySignupHours error:", e)
+            return False
+        except (TypeError, ValueError):
             return False
 
     def unverifySignup(self, signupID):
@@ -1411,8 +1422,9 @@ class Database:
 
     def setSignupNoShow(self, signupID, no_show):
         self.cursor.execute(
-            "UPDATE event_signups SET no_show = ? WHERE signupID = ?",
-            (1 if no_show else 0, signupID),
+            "UPDATE event_signups SET no_show = ? WHERE signupID = ? "
+            "AND status = 'registered' AND (? = 0 OR check_in_time IS NULL)",
+            (1 if no_show else 0, signupID, 1 if no_show else 0),
         )
         self.connection.commit()
         return self.cursor.rowcount > 0
@@ -1508,6 +1520,25 @@ class Database:
             VALUES (?, ?, ?, ?)
         """, (userID, message, type_, related_opportunityID))
         self.connection.commit()
+
+    def notifyUpcomingSignup(self, signupID, userID, opportunityID, title):
+        with self.connection:
+            self.cursor.execute("""
+                UPDATE event_signups SET reminder_sent = 1
+                WHERE signupID = ? AND userID = ? AND status = 'registered'
+                AND reminder_sent = 0
+            """, (signupID, userID))
+            if not self.cursor.rowcount:
+                return False
+            self.cursor.execute("""
+                INSERT INTO notifications
+                    (userID, message, type, related_opportunityID)
+                VALUES (?, ?, 'event_reminder', ?)
+            """, (
+                userID, f"Reminder: {title} is coming up within 24 hours.",
+                opportunityID,
+            ))
+        return True
 
     def getNotifications(self, userID, limit=50):
         self.cursor.execute("""
@@ -1618,6 +1649,47 @@ class Database:
             LIMIT ?
         """, (userID, userID, limit))
         return self.cursor.fetchall()
+
+    def backupTo(self, path):
+        if os.path.normcase(os.path.realpath(path)) == os.path.normcase(
+            os.path.realpath(self.db_path)
+        ):
+            raise ValueError("Choose a backup path different from the live database.")
+        self.connection.commit()
+        destination = sqlite3.connect(path)
+        try:
+            self.connection.backup(destination)
+        finally:
+            destination.close()
+
+    def restoreFrom(self, path):
+        if not os.path.isfile(path):
+            raise FileNotFoundError(path)
+        if os.path.normcase(os.path.realpath(path)) == os.path.normcase(
+            os.path.realpath(self.db_path)
+        ):
+            raise ValueError("Choose a backup file different from the live database.")
+        source = sqlite3.connect(path)
+        try:
+            if source.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise sqlite3.DatabaseError("The selected backup failed its integrity check.")
+            if source.execute("PRAGMA foreign_key_check").fetchone():
+                raise sqlite3.DatabaseError("The selected backup contains invalid references.")
+            tables = {
+                row[0] for row in source.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            required = {"users", "organizations", "opportunities", "event_signups"}
+            if not required.issubset(tables):
+                raise sqlite3.DatabaseError("The selected file is not a Moxie database backup.")
+            self.connection.commit()
+            source.backup(self.connection)
+            self.connection.commit()
+            self.createTable()
+            self.migrate()
+        finally:
+            source.close()
 
     # ── Shutdown ───────────────────────────────────────────────────
     def close(self):

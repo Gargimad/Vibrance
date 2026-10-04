@@ -12,21 +12,22 @@ Tabs in a QStackedWidget. Tab buttons live in landing.py's top nav bar.
 """
 
 import calendar
+import csv
 import html
 import json
 import os
 import urllib.error
 import urllib.request
 import zlib
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
-from PyQt6.QtCore import Qt, QPointF, QRectF, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QPointF, QRectF, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPalette
 from PyQt6.QtWidgets import(
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QStackedWidget, QScrollArea, QMessageBox,
     QCalendarWidget, QLineEdit, QCheckBox, QFormLayout,
-    QGridLayout, QProgressBar,
+    QGridLayout, QProgressBar, QFileDialog,
 )
 
 import theme
@@ -296,6 +297,10 @@ class VolunteerHome(VolunteerNotifications, QWidget):
         outer.addWidget(self.stack, 1)
 
         outer.addWidget(self._build_slogan_bar(), 0)
+        self._reminder_timer = QTimer(self)
+        self._reminder_timer.setInterval(60_000)
+        self._reminder_timer.timeout.connect(self._check_upcoming_reminders)
+        self._reminder_timer.start()
 
     # ── DB access ─────────────────────────────────────────────────────────
     def _db(self, method, *args, default=None):
@@ -484,6 +489,12 @@ class VolunteerHome(VolunteerNotifications, QWidget):
             self.tile_values[key] = val
             tiles.addWidget(tile, 1)
         lay.addLayout(tiles)
+
+        impact_btn = QPushButton("Export verified impact record")
+        impact_btn.setObjectName(theme.SECONDARY_BTN)
+        impact_btn.setAccessibleName("Export verified volunteer hours")
+        impact_btn.clicked.connect(self._export_impact_record)
+        lay.addWidget(impact_btn)
 
         rec_card, self.dash_recommended = self._dash_card(
             "Recommended for you", "Browse all", TAB_DASHBOARD
@@ -1307,6 +1318,7 @@ class VolunteerHome(VolunteerNotifications, QWidget):
         rows = self._db("getSignupsForVolunteer", self.userID, default=[]) or []
         active = [r for r in rows if (rget(r, "status", "") or "") != "cancelled"]
         self._signup_rows = active
+        self._notify_upcoming_events(active)
 
         # Show/hide the first-time welcome card
         has_activity = bool(active)
@@ -1453,7 +1465,7 @@ class VolunteerHome(VolunteerNotifications, QWidget):
         self._clear_all(self.dash_recommended)
 
         try:
-            from ml_recommender import rank_opportunities
+            from ml_recommender import explain_match, rank_opportunities
         except ImportError:
             self.dash_recommended.addWidget(self._dash_text(
                 "Recommendations need scikit-learn. "
@@ -1508,8 +1520,91 @@ class VolunteerHome(VolunteerNotifications, QWidget):
             )
             if s > 0:
                 sub += f" · match {int(round(s * 100))}%"
+                reasons = explain_match(user_profile, r)
+                if reasons:
+                    sub += " · " + ", ".join(reasons)
             self.dash_recommended.addWidget(self._dash_row(
                 org_color(rget(r, "org_name")),
                 str(rget(r, "title", "Untitled event")),
                 sub,
             ))
+
+    def _notify_upcoming_events(self, rows):
+        now = datetime.now()
+        for row in rows:
+            if (rget(row, "reminder_sent", 0)
+                    or rget(row, "check_out_time")
+                    or rget(row, "no_show", 0)):
+                continue
+            try:
+                event_date = date.fromisoformat(
+                    str(rget(row, "event_date", ""))[:10]
+                )
+                start_text = str(rget(row, "start_time", "") or "09:00")
+                start_time = time.fromisoformat(start_text[:8])
+            except ValueError:
+                continue
+            starts_in = datetime.combine(event_date, start_time) - now
+            if timedelta(0) <= starts_in <= timedelta(hours=24):
+                self._db(
+                    "notifyUpcomingSignup",
+                    rget(row, "signupID"), self.userID,
+                    rget(row, "opportunityID"),
+                    rget(row, "title", "Your volunteer event"),
+                    default=False,
+                )
+
+    def _check_upcoming_reminders(self):
+        if not (self.userID and self.isVisible()):
+            return
+        rows = self._db(
+            "getSignupsForVolunteer", self.userID, default=[]
+        ) or []
+        self._notify_upcoming_events([
+            row for row in rows
+            if (rget(row, "status", "") or "") != "cancelled"
+        ])
+
+    def _export_impact_record(self):
+        rows = self._db(
+            "getSignupsForVolunteer", self.userID, default=[]
+        ) or []
+        verified = [
+            r for r in rows
+            if rget(r, "verified", 0) and not rget(r, "no_show", 0)
+        ]
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export impact record", "moxie-impact.csv",
+            "CSV files (*.csv)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as file:
+                writer = csv.writer(file)
+                writer.writerow(["Moxie volunteer impact record"])
+                writer.writerow([
+                    "Verified hours",
+                    f"{sum(float(rget(r, 'hours_logged', 0) or 0) for r in verified):.2f}",
+                ])
+                writer.writerow([])
+                writer.writerow([
+                    "Opportunity", "Organization", "Date",
+                    "Verified hours",
+                ])
+                for row in verified:
+                    writer.writerow([
+                        rget(row, "title", ""),
+                        rget(row, "org_name", "Independent"),
+                        rget(row, "event_date", ""),
+                        f"{float(rget(row, 'hours_logged', 0) or 0):.2f}",
+                    ])
+        except OSError as exc:
+            QMessageBox.warning(
+                self, "Export failed", f"Could not save the impact record:\n{exc}"
+            )
+            return
+        QMessageBox.information(
+            self, "Export complete",
+            f"Saved {len(verified)} verified event records.",
+        )

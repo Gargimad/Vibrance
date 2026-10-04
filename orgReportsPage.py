@@ -205,12 +205,35 @@ class OrgReportsPage(QWidget):
                        if r["verified"] and not r["no_show"])
         uniq_vols = len({r["userID"] for r in self.rows})
         no_shows = sum(1 for r in self.rows if r["no_show"])
+        volunteer_counts = {}
+        for row in self.rows:
+            volunteer_counts[row["userID"]] = (
+                volunteer_counts.get(row["userID"], 0) + 1
+            )
+        repeat_volunteers = sum(
+            1 for count in volunteer_counts.values() if count > 1
+        )
+        opportunities = self._db(
+            "getOpportunitiesByOrg", self.org["orgID"], default=[]
+        ) or []
+        capped_opportunities = [
+            row for row in opportunities
+            if row["capacity"]
+            and (row["status"] or "").lower() != "cancelled"
+        ]
+        capacity = sum(int(row["capacity"]) for row in capped_opportunities)
+        signups = sum(
+            int(row["registered_count"] or 0) for row in capped_opportunities
+        )
+        fill_rate = f"{round(100 * signups / capacity)}%" if capacity else "—"
 
         for label, value in (
             ("Total hours", f"{total_hours:.1f}"),
             ("Verified hours", f"{verified:.1f}"),
             ("Volunteers", str(uniq_vols)),
+            ("Repeat volunteers", str(repeat_volunteers)),
             ("No-shows", str(no_shows)),
+            ("Overall capacity filled", fill_rate),
         ):
             tile = QFrame()
             tile.setObjectName(theme.EVENT_CARD)

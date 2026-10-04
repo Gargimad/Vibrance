@@ -15,10 +15,13 @@ same list - NAV_TO_STACK bridges them. landing.py should call
 show_nav_tab(i) for nav clicks and current_nav_tab() for highlighting.
 """
 
+import sqlite3
+from datetime import datetime
+
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit,
     QPushButton, QComboBox, QDateEdit, QCheckBox, QSpinBox, QListWidget,
     QListWidgetItem, QMessageBox, QFrame, QScrollArea, QGridLayout,
     QStackedWidget, QFileDialog, QDialog,
@@ -215,6 +218,20 @@ class OrgDashboard(QWidget):
         )
         grid.addWidget(card_act, 0, 1)
         lay.addLayout(grid)
+
+        data_actions = QHBoxLayout()
+        backup_btn = QPushButton("Back up local data")
+        backup_btn.setObjectName(theme.SECONDARY_BTN)
+        backup_btn.setAccessibleName("Back up local Moxie database")
+        backup_btn.clicked.connect(self._backup_database)
+        restore_btn = QPushButton("Restore from backup")
+        restore_btn.setObjectName(theme.SECONDARY_BTN)
+        restore_btn.setAccessibleName("Restore local Moxie database from backup")
+        restore_btn.clicked.connect(self._restore_database)
+        data_actions.addWidget(backup_btn)
+        data_actions.addWidget(restore_btn)
+        data_actions.addStretch(1)
+        lay.addLayout(data_actions)
 
         # ── Quick actions ──────────────────────────────────────────
         actions_card = QFrame()
@@ -452,6 +469,11 @@ class OrgDashboard(QWidget):
         view_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         view_btn.clicked.connect(self._view_signups_selected)
         row.addWidget(view_btn)
+
+        share_btn = QPushButton("Copy share details")
+        share_btn.setObjectName(theme.SECONDARY_BTN)
+        share_btn.clicked.connect(self._copy_share_details)
+        row.addWidget(share_btn)
 
         edit_btn = QPushButton("Edit selected")
         edit_btn.setObjectName(theme.SECONDARY_BTN)
@@ -798,6 +820,100 @@ class OrgDashboard(QWidget):
         from attendanceDialog import AttendanceDialog
         AttendanceDialog(self.db, self.org, row, parent=self).exec()
         self._refresh_list()
+
+    def _copy_share_details(self):
+        item = self.list_widget.currentItem()
+        if not item:
+            QMessageBox.information(
+                self, "Share opportunity",
+                "Select an opportunity in the list first.",
+            )
+            return
+        opportunity_id = item.data(Qt.ItemDataRole.UserRole)
+        if not opportunity_id:
+            QMessageBox.information(
+                self, "Share opportunity",
+                "Select an opportunity in the list first.",
+            )
+            return
+        row = self.db.getOpportunityByID(opportunity_id)
+        if not row:
+            QMessageBox.warning(
+                self, "Not found", "That opportunity no longer exists."
+            )
+            return
+        details = [
+            str(row["title"] or "Volunteer opportunity"),
+            format_event_when(row),
+            str(row["location"] or "Location to be confirmed"),
+        ]
+        if row["website_link"]:
+            details.append(str(row["website_link"]))
+        QApplication.clipboard().setText("\n".join(details))
+        QMessageBox.information(
+            self, "Copied",
+            "Opportunity details are ready to paste into a message.",
+        )
+
+    def _backup_database(self):
+        default_name = (
+            f"moxie-backup-{datetime.now():%Y%m%d-%H%M%S}.db"
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Back up Moxie data", default_name,
+            "SQLite database (*.db)",
+        )
+        if not path:
+            return
+        try:
+            self.db.backupTo(path)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            QMessageBox.warning(
+                self, "Backup failed", f"Could not back up local data:\n{exc}"
+            )
+            return
+        QMessageBox.information(
+            self, "Backup complete", f"Saved the database backup to:\n{path}"
+        )
+
+    def _restore_database(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Restore Moxie data", "",
+            "SQLite database (*.db *.sqlite *.sqlite3)",
+        )
+        if not path:
+            return
+        if QMessageBox.warning(
+            self, "Replace local data?",
+            "Restoring replaces the current Moxie database. "
+            "A safety backup of the current data will be created first. "
+            "Moxie will close after a successful restore.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        safety_path = (
+            f"{self.db.db_path}.before-restore-"
+            f"{datetime.now():%Y%m%d-%H%M%S}.db"
+        )
+        try:
+            self.db.backupTo(safety_path)
+            self.db.restoreFrom(path)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            QMessageBox.warning(
+                self, "Restore failed",
+                f"Could not restore the selected backup:\n{exc}\n\n"
+                f"The current database backup is at:\n{safety_path}",
+            )
+            return
+        QMessageBox.information(
+            self, "Restore complete",
+            "Moxie will now close. Reopen it to use the restored data.",
+        )
+        app = QApplication.instance()
+        if app:
+            app.quit()
 
     def _save(self):
         if not self.org:

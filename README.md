@@ -16,6 +16,12 @@ volunteers. Moxie gives them:
 - Verified hours: the org reviews and approves each volunteer's hours.
 - No-show tracking.
 - Editable hours for corrections.
+- Organizers can check volunteers in or out from the event roster, review
+  hours, and mark no-shows from **View signups**.
+- Volunteers receive an in-app notification when a registered event is
+  within 24 hours while their dashboard is open.
+- Volunteers can export their approved hours as a shareable CSV impact
+  record. Recommendations explain skill, country, and remote matches.
 
 ### Monitor Participation
 - Reports tab: hours by volunteer, hours by opportunity, custom date
@@ -23,6 +29,16 @@ volunteers. Moxie gives them:
 - Leaderboard of top volunteers.
 - "Needs attention" card surfaces unverified hours and under-filled
   events.
+- Reports also summarize repeat volunteers and overall opportunity
+  capacity filled. Opportunity details can be copied to share in a message.
+
+### Protect Local Data
+- Organization admins can back up the local SQLite database and restore a
+  backup from the dashboard. Restoring first saves a safety backup and
+  closes Moxie; reopen the app to use the restored data.
+- The desktop app remains local-first. Cross-device syncing and phone-to-PC
+  QR check-in require a shared hosted backend, which is not part of this
+  SQLite build.
 
 ### Migrate an Organization Roster
 - Organization admins can open **Data migration** to update organization

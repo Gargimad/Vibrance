@@ -58,6 +58,30 @@ def _user_doc(user_row, signup_rows, joined_org_rows):
     return _clean(" ".join(p for p in parts if p))
 
 
+def explain_match(user_row, opportunity_row):
+    """Return short, evidence-based reasons for a recommendation."""
+    user_skills = {
+        _clean(term) for term in re.split(
+            r"[,;|]", str(_get(user_row, "skills"))
+        ) if _clean(term)
+    }
+    required_skills = {
+        _clean(term) for term in re.split(
+            r"[,;|]", str(_get(opportunity_row, "required_skills"))
+        ) if _clean(term)
+    }
+    shared = sorted(user_skills & required_skills)
+    reasons = [f"Matches skill: {skill}" for skill in shared[:2]]
+
+    country = _clean(_get(user_row, "country"))
+    location = _clean(_get(opportunity_row, "location"))
+    if country and country in location:
+        reasons.append("In your country")
+    if _get(opportunity_row, "is_remote"):
+        reasons.append("Remote-friendly")
+    return reasons
+
+
 def rank_opportunities(user_row, signup_rows, joined_org_rows,
                        candidate_rows, top_n=6):
     """

@@ -16,8 +16,6 @@ from landing import Landing
 from focusTracker import FocusTracker
 
 APP_ID = "Moxie.VolunteerManager.1"
-
-
 def _set_windows_app_id():
     """
     Tell Windows this process is 'Moxie', not 'python.exe'.
