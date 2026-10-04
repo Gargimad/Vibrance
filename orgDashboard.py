@@ -30,6 +30,7 @@ from eventCard import clear_thumbnail_cache
 
 TAB_OVERVIEW, TAB_LIST, TAB_FORM, TAB_ANNOUNCEMENTS = 0, 1, 2, 3
 TAB_VOLUNTEERS, TAB_REPORTS = 4, 5
+TAB_MIGRATION = 6
 
 
 class OrgDashboard(QWidget):
@@ -39,6 +40,7 @@ class OrgDashboard(QWidget):
         "Volunteers",
         "Reports",
         "Announcements",
+        "Data migration",
     ]
 
     # Which stack index each nav button goes to.
@@ -49,7 +51,7 @@ class OrgDashboard(QWidget):
     #   nav 4 -> stack 3 (Announcements)  -- skips the form page (stack 2)
     NAV_TO_STACK = [
         TAB_OVERVIEW, TAB_LIST, TAB_VOLUNTEERS, TAB_REPORTS,
-        TAB_ANNOUNCEMENTS,
+        TAB_ANNOUNCEMENTS, TAB_MIGRATION,
     ]
 
     def __init__(self, db, on_logout_click=None, on_back_click=None,
@@ -76,10 +78,13 @@ class OrgDashboard(QWidget):
         # ── Volunteer management pages ─────────────────────────────
         from orgVolunteersPage import OrgVolunteersPage
         from orgReportsPage import OrgReportsPage
+        from orgMigrationPage import OrgMigrationPage
         self.volunteersPage = OrgVolunteersPage(self.db)
         self.reportsPage = OrgReportsPage(self.db)
+        self.migrationPage = OrgMigrationPage(self.db)
         self.stack.addWidget(self.volunteersPage)               # 4
         self.stack.addWidget(self.reportsPage)                  # 5
+        self.stack.addWidget(self.migrationPage)                 # 6
 
         outer.addWidget(self.stack, 1)
 
@@ -88,6 +93,7 @@ class OrgDashboard(QWidget):
         self.org = org_data
         self.volunteersPage.set_org(org_data)
         self.reportsPage.set_org(org_data)
+        self.migrationPage.set_org_data(org_data)
         self.show_tab(TAB_OVERVIEW)
 
     def current_tab(self):
@@ -108,6 +114,8 @@ class OrgDashboard(QWidget):
             self.volunteersPage.refresh()
         elif idx == TAB_REPORTS:
             self.reportsPage.refresh()
+        elif idx == TAB_MIGRATION:
+            self.migrationPage.refresh()
 
     def show_nav_tab(self, nav_idx):
         """

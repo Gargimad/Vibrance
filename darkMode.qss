@@ -476,6 +476,39 @@ QListWidget#SearchSuggestions::item:selected {
     border: none;
 }
 
+#VolunteerDashboard {
+    background-color: #1E1626;
+    color: #EDE6F2;
+}
+
+#VolunteerDashboard QLabel {
+    color: #EDE6F2;
+}
+
+#VolunteerDashboard #EventCard {
+    background-color: #2E2238;
+    border: 1px solid #4A3A54;
+    border-top: 4px solid #7B8BE0;
+}
+
+#VolunteerDashboard #EventCard:hover {
+    border: 1px solid #7B8BE0;
+    border-top: 4px solid #7B8BE0;
+}
+
+#VolunteerDashboard #EventTitleList {
+    color: #EDE6F2;
+}
+
+#VolunteerDashboard #EventMetaValue {
+    color: #C7B9D4;
+    font-weight: normal;
+}
+
+#VolunteerDashboard #FormSubtitle {
+    color: #9C8EA9;
+}
+
 #SectionTitle {
     font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
     font-size: 26px;
@@ -954,3 +987,141 @@ QPushButton#GlobalMic[listening="true"] {
 QMessageBox {
         background-color: #1E1626;
     }
+QWidget#LoginCard {
+    background-color: #2E2238; /* Change to your desired background color */        /* Optional: if you want rounded corners */
+}
+QDialog {
+    background-color: #2E2238;
+}
+
+/* ── Chat widget ───────────────────────────────────────────────── */
+#ChatView,
+#ChatScrollArea,
+#ChatScrollArea > QWidget#qt_scrollarea_viewport,
+#ChatTranscript {
+    background-color: transparent;
+    border: none;
+}
+
+#ChatComposer {
+    background-color: #251A2E;
+    border: 1px solid #4A3A54;
+    border-radius: 24px;
+}
+
+QLineEdit#ChatInput {
+    background: transparent;
+    border: none;
+    color: #EDE6F2;
+    selection-background-color: #B39CDB;
+    selection-color: #1E1626;
+}
+
+QPushButton#ChatIconButton {
+    background-color: #B39CDB;
+    color: #1E1626;
+    border: 1px solid #7B8BE0;
+}
+
+QPushButton#ChatIconButton:hover {
+    background-color: #C9B4EC;
+}
+
+QPushButton#ChatIconButton:pressed {
+    background-color: #9A7FC7;
+}
+
+QPushButton#ChatIconButton:checked {
+    background-color: #E74C3C;
+    color: #F5F0EE;
+}
+
+QLabel#ChatUserBubbleFirst,
+QLabel#ChatUserBubbleGrouped {
+    background-color: #7B8BE0;
+    color: #1E1626;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+QLabel#ChatUserBubbleFirst {
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    border-bottom-right-radius: 4px;
+    border-bottom-left-radius: 16px;
+}
+
+QLabel#ChatUserBubbleGrouped {
+    border-radius: 16px;
+}
+
+QLabel#ChatAssistantBubbleFirst,
+QLabel#ChatAssistantBubbleGrouped,
+QLabel#ChatTypingBubble {
+    background-color: #2E2238;
+    color: #EDE6F2;
+    border: 1px solid #4A3A54;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+QLabel#ChatAssistantBubbleFirst,
+QLabel#ChatTypingBubble {
+    border-top-left-radius: 4px;
+    border-top-right-radius: 16px;
+    border-bottom-right-radius: 16px;
+    border-bottom-left-radius: 16px;
+}
+
+QLabel#ChatAssistantBubbleGrouped {
+    border-radius: 16px;
+}
+
+QLabel#ChatTypingBubble {
+    color: #C7B9D4;
+    padding: 8px 14px;
+    font-size: 11px;
+}
+
+QLabel#ChatAvatar {
+    background-color: #B39CDB;
+    color: #1E1626;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+QLabel#ChatTimestamp,
+QLabel#ChatDateLabel {
+    color: #9C8EA9;
+    padding: 0 6px;
+}
+
+QLabel#ChatTimestamp {
+    font-size: 10px;
+}
+
+QLabel#ChatDateLabel {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+QFrame#ChatDateRule {
+    color: #4A3A54;
+}
+
+QDialog#ChatHistoryDialog,
+QListWidget#ChatHistoryList {
+    background-color: #2E2238;
+    color: #EDE6F2;
+}
+
+QListWidget#ChatHistoryList {
+    border: 1px solid #4A3A54;
+    selection-background-color: #B39CDB;
+    selection-color: #1E1626;
+}
+
+QLabel#ChatHistoryEmpty {
+    color: #C7B9D4;
+}

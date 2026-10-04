@@ -41,13 +41,6 @@ SEND_GLYPH = "➤"
 MIC_GLYPH = "🎙️"
 NEW_CHAT_GLYPH = "✛"
 
-# Solid button colours (no transparency).
-ICON_BG = "#2D1A3E"          # matches the user bubble colour
-ICON_HOVER_BG = "#4A2C66"
-ICON_PRESSED_BG = "#1F1129"
-ICON_CHECKED_BG = "#C62828"  # red while the mic is listening
-ICON_BORDER = "#8C8C8C"
-
 BTN_SIZE = 40
 BTN_FONT_PX = 20
 
@@ -68,6 +61,7 @@ class ChatView(QWidget):
                  parent=None,
                  history_path=DEFAULT_HISTORY_PATH):
         super().__init__(parent)
+        self.setObjectName("ChatView")
 
         self._history_path = history_path   # None = don't persist
         self._sessions = []                 # every saved chat
@@ -160,15 +154,18 @@ class ChatView(QWidget):
             return
 
         dlg = QDialog(self)
+        dlg.setObjectName("ChatHistoryDialog")
         dlg.setWindowTitle("Chat history")
         dlg.resize(420, 480)
         lay = QVBoxLayout(dlg)
 
         lst = QListWidget()
+        lst.setObjectName("ChatHistoryList")
         lay.addWidget(lst, 1)
 
         empty = QLabel("No past chats yet. Start talking and they'll "
                        "show up here.")
+        empty.setObjectName("ChatHistoryEmpty")
         empty.setWordWrap(True)
         lay.addWidget(empty)
 
@@ -247,11 +244,10 @@ class ChatView(QWidget):
         self.scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        self.scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-        )
+        self.scroll.setObjectName("ChatScrollArea")
 
         self.content = QWidget()
+        self.content.setObjectName("ChatTranscript")
         self.chat_layout = QVBoxLayout(self.content)
         self.chat_layout.setContentsMargins(8, 8, 8, 8)
         self.chat_layout.setSpacing(4)
@@ -262,13 +258,6 @@ class ChatView(QWidget):
         # ── Composer ─────────────────────────────────────────────────
         composer = QFrame()
         composer.setObjectName("ChatComposer")
-        composer.setStyleSheet(
-            "QFrame#ChatComposer {"
-            "  background: rgba(127,127,127,20);"
-            "  border-radius: 24px;"
-            "  padding: 4px;"
-            "}"
-        )
         cl = QHBoxLayout(composer)
         cl.setContentsMargins(8, 4, 6, 4)
         cl.setSpacing(6)
@@ -276,14 +265,6 @@ class ChatView(QWidget):
         self.input = QLineEdit()
         self.input.setObjectName("ChatInput")
         self.input.setPlaceholderText("Message Moxie...")
-        self.input.setStyleSheet(
-            "QLineEdit#ChatInput {"
-            "  border: none;"
-            "  background: transparent;"
-            "  padding: 6px 4px;"
-            "  font-size: 13px;"
-            "}"
-        )
         self.input.setMinimumWidth(80)
         self.input.returnPressed.connect(self._on_send_clicked)
         cl.addWidget(self.input, 1)
@@ -330,19 +311,11 @@ class ChatView(QWidget):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(tooltip)
 
+        btn.setObjectName("ChatIconButton")
         btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  background-color: {ICON_BG};"
-            f"  border: 1px solid {ICON_BORDER};"
-            f"  border-radius: {size // 2}px;"
-            f"  padding: 0px;"
-            f"  margin: 0px;"
-            f"  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji';"
-            f"  font-size: {font_px}px;"
-            f"}}"
-            f"QPushButton:hover {{ background-color: {ICON_HOVER_BG}; }}"
-            f"QPushButton:pressed {{ background-color: {ICON_PRESSED_BG}; }}"
-            f"QPushButton:checked {{ background-color: {ICON_CHECKED_BG}; }}"
+            f"border-radius: {size // 2}px;"
+            f"font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji';"
+            f"font-size: {font_px}px;"
         )
         return btn
 
@@ -566,15 +539,9 @@ class ChatView(QWidget):
                 outer.addWidget(spacer, 0, Qt.AlignmentFlag.AlignTop)
             else:
                 avatar = QLabel("M")
+                avatar.setObjectName("ChatAvatar")
                 avatar.setFixedSize(28, 28)
                 avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                avatar.setStyleSheet(
-                    "background: #2D1A3E;"
-                    " color: #F5F0EE;"
-                    " border-radius: 14px;"
-                    " font-size: 13px;"
-                    " font-weight: bold;"
-                )
                 outer.addWidget(avatar, 0, Qt.AlignmentFlag.AlignTop)
 
         col = QVBoxLayout()
@@ -582,6 +549,9 @@ class ChatView(QWidget):
         col.setContentsMargins(0, 0, 0, 0)
 
         bubble = QLabel(text)
+        role = "User" if is_user else "Assistant"
+        group = "Grouped" if grouped else "First"
+        bubble.setObjectName(f"Chat{role}Bubble{group}")
         bubble.setWordWrap(True)
         bubble.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -590,16 +560,11 @@ class ChatView(QWidget):
         bubble.setSizePolicy(
             QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred
         )
-        bubble.setStyleSheet(self._bubble_qss(is_user, grouped))
         col.addWidget(bubble)
 
         if not grouped:
             ts = QLabel(timestamp or datetime.now().strftime("%H:%M"))
-            ts.setStyleSheet(
-                "color: rgba(140,140,140,180);"
-                "font-size: 10px;"
-                "padding: 0 6px;"
-            )
+            ts.setObjectName("ChatTimestamp")
             ts.setAlignment(
                 Qt.AlignmentFlag.AlignRight if is_user
                 else Qt.AlignmentFlag.AlignLeft
@@ -616,29 +581,6 @@ class ChatView(QWidget):
         self.chat_layout.insertWidget(self.chat_layout.count() - 1, row)
         QTimer.singleShot(0, self._scroll_to_bottom)
 
-    @staticmethod
-    def _bubble_qss(is_user, grouped):
-        if is_user:
-            bg = "#2D1A3E"
-            fg = "#F5F0EE"
-            radii = (16, 16, 16, 16) if grouped else (16, 16, 4, 16)
-        else:
-            bg = "rgba(127,127,127,32)"
-            fg = "palette(text)"
-            radii = (16, 16, 16, 16) if grouped else (4, 16, 16, 16)
-
-        tl, tr, br, bl = radii
-        return (
-            f"background: {bg};"
-            f"color: {fg};"
-            f"border-top-left-radius: {tl}px;"
-            f"border-top-right-radius: {tr}px;"
-            f"border-bottom-right-radius: {br}px;"
-            f"border-bottom-left-radius: {bl}px;"
-            "padding: 8px 12px;"
-            "font-size: 13px;"
-        )
-
     def _append_date_separator(self, label="Today"):
         wrap = QWidget()
         lay = QHBoxLayout(wrap)
@@ -646,21 +588,16 @@ class ChatView(QWidget):
         lay.setSpacing(8)
 
         left = QFrame()
+        left.setObjectName("ChatDateRule")
         left.setFrameShape(QFrame.Shape.HLine)
-        left.setStyleSheet("color: rgba(127,127,127,60);")
         left.setFixedHeight(1)
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(
-            "color: rgba(140,140,140,200);"
-            "font-size: 11px;"
-            "font-weight: 600;"
-            "padding: 0 6px;"
-        )
+        lbl.setObjectName("ChatDateLabel")
 
         right = QFrame()
+        right.setObjectName("ChatDateRule")
         right.setFrameShape(QFrame.Shape.HLine)
-        right.setStyleSheet("color: rgba(127,127,127,60);")
         right.setFixedHeight(1)
 
         lay.addWidget(left, 1)
@@ -692,29 +629,13 @@ class ChatView(QWidget):
         outer.setSpacing(8)
 
         avatar = QLabel("M")
+        avatar.setObjectName("ChatAvatar")
         avatar.setFixedSize(28, 28)
         avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        avatar.setStyleSheet(
-            "background: #2D1A3E;"
-            " color: #F5F0EE;"
-            " border-radius: 14px;"
-            " font-size: 13px;"
-            " font-weight: bold;"
-        )
         outer.addWidget(avatar, 0, Qt.AlignmentFlag.AlignTop)
 
         dots = QLabel(".  .  .")
-        dots.setStyleSheet(
-            "background: rgba(127,127,127,32);"
-            "color: rgba(140,140,140,200);"
-            "border-top-left-radius: 4px;"
-            "border-top-right-radius: 16px;"
-            "border-bottom-right-radius: 16px;"
-            "border-bottom-left-radius: 16px;"
-            "padding: 8px 14px;"
-            "font-size: 11px;"
-            "letter-spacing: 2px;"
-        )
+        dots.setObjectName("ChatTypingBubble")
         outer.addWidget(dots, 0, Qt.AlignmentFlag.AlignTop)
         outer.addStretch(1)
 

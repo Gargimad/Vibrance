@@ -181,7 +181,7 @@ class MonthlyBars(QWidget):
             y = h - bottom - bar_h
             if v > 0:
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor("#2E86DE"))
+                p.setBrush(QColor("#7B8BE0"))
                 p.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 4, 4)
                 p.setPen(text)
                 p.drawText(QRectF(slot * i, y - 16, slot, 14),
@@ -417,7 +417,6 @@ class VolunteerHome(VolunteerNotifications, QWidget):
             b.setFlat(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setStyleSheet(
-                "QPushButton { border: none; color: #2E86DE; }"
                 "QPushButton:hover { text-decoration: underline; }"
             )
             b.clicked.connect(lambda _, i=tab: self.show_tab(i))
@@ -431,6 +430,7 @@ class VolunteerHome(VolunteerNotifications, QWidget):
 
     def _build_overview_page(self):
         page = QWidget()
+        page.setObjectName(theme.VOLUNTEER_DASHBOARD)
         outer = QVBoxLayout(page)
         outer.setContentsMargins(0, 0, 0, 0)
 
@@ -566,7 +566,7 @@ class VolunteerHome(VolunteerNotifications, QWidget):
         card.setObjectName(theme.EVENT_CARD)
         card.setStyleSheet(
             f"QFrame#{theme.EVENT_CARD} "
-            "{ border-left: 6px solid #2E86DE; }"
+            "{ border-left: 6px solid #7B8BE0; }"
         )
         v = QVBoxLayout(card)
         v.setContentsMargins(20, 16, 20, 16)

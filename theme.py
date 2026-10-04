@@ -101,6 +101,7 @@ FILTER_MORE_ROW         = "FilterMoreRow"
 FILTER_CLEAR_BTN        = "FilterClearBtn"
 
 # Volunteer listing page
+VOLUNTEER_DASHBOARD    = "VolunteerDashboard"
 VOLUNTEER_PAGE          = "VolunteerPage"
 VOLUNTEER_HEADER        = "VolunteerHeader"
 VOLUNTEER_TITLE         = "VolunteerTitle"

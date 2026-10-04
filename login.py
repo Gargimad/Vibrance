@@ -18,7 +18,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFrame, QMessageBox, QButtonGroup,
+    QPushButton, QFrame, QMessageBox, QButtonGroup, QDialog, QFormLayout,
 )
 
 import theme
@@ -102,6 +102,11 @@ class Login(QWidget):
         if self.on_back_click:
             back_btn.clicked.connect(self.on_back_click)
 
+        activate_btn = QPushButton("Activate imported account")
+        activate_btn.setObjectName(theme.SECONDARY_BTN)
+        activate_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        activate_btn.clicked.connect(self._activate_imported_account)
+
         card_layout.addWidget(title)
         card_layout.addWidget(subtitle)
         card_layout.addSpacing(4)
@@ -110,6 +115,7 @@ class Login(QWidget):
         card_layout.addWidget(self.password_input)
         card_layout.addSpacing(6)
         card_layout.addWidget(login_btn)
+        card_layout.addWidget(activate_btn)
         card_layout.addWidget(back_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         outer.addWidget(card)
@@ -128,6 +134,79 @@ class Login(QWidget):
         self.password_input.clear()
         self.toggle_pwd.setChecked(False)
         self._toggle_pwd(False)
+
+    def _activate_imported_account(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Activate volunteer account")
+        layout = QVBoxLayout(dlg)
+        form = QFormLayout()
+        email = QLineEdit()
+        email.setPlaceholderText("Email address")
+        code = QLineEdit()
+        code.setPlaceholderText("8-digit email code")
+        code.setMaxLength(8)
+        password = QLineEdit()
+        password.setPlaceholderText("At least 8 characters")
+        password.setEchoMode(QLineEdit.EchoMode.Password)
+        confirm = QLineEdit()
+        confirm.setPlaceholderText("Confirm password")
+        confirm.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Email", email)
+        form.addRow("Activation code", code)
+        form.addRow("New password", password)
+        form.addRow("Confirm password", confirm)
+        layout.addLayout(form)
+
+        actions = QHBoxLayout()
+        cancel = QPushButton("Cancel")
+        activate = QPushButton("Activate")
+        activate.setObjectName(theme.PRIMARY_BTN)
+        actions.addStretch(1)
+        actions.addWidget(cancel)
+        actions.addWidget(activate)
+        layout.addLayout(actions)
+        cancel.clicked.connect(dlg.reject)
+
+        def submit():
+            address = email.text().strip()
+            activation_code = code.text().strip()
+            new_password = password.text()
+            if not address or len(activation_code) != 8:
+                QMessageBox.warning(
+                    dlg, "Missing information",
+                    "Enter your email address and the 8-digit code."
+                )
+                return
+            if len(new_password) < 8:
+                QMessageBox.warning(
+                    dlg, "Password too short",
+                    "Choose a password with at least 8 characters."
+                )
+                return
+            if new_password != confirm.text():
+                QMessageBox.warning(
+                    dlg, "Passwords don't match",
+                    "Enter the same password in both fields."
+                )
+                return
+            if not self.db.activateImportedVolunteer(
+                    address, activation_code, new_password):
+                QMessageBox.warning(
+                    dlg, "Activation failed",
+                    "The email or code is incorrect, expired, or has "
+                    "already been used. Ask your organization to resend "
+                    "the invitation."
+                )
+                return
+            dlg.accept()
+
+        activate.clicked.connect(submit)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            QMessageBox.information(
+                self, "Account activated",
+                "Your account is active. You can now log in with your "
+                "email and new password."
+            )
 
     # ── Auth ──────────────────────────────────────────────────────────────
     def _attempt_login(self):

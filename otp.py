@@ -18,7 +18,7 @@ Environment (loaded from .env via python-dotenv, once at import):
 import os
 import smtplib
 import ssl
-import random
+import secrets
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -40,7 +40,11 @@ load_dotenv()
 # Sending
 # ─────────────────────────────────────────────────────────────────────────────
 def generate_otp() -> str:
-    return f"{random.randint(0, 999999):06d}"
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def generate_activation_code() -> str:
+    return f"{secrets.randbelow(100_000_000):08d}"
 
 
 def send_otp_email(recipient_email: str, otp_code: str) -> bool:
@@ -73,12 +77,48 @@ def send_otp_email(recipient_email: str, otp_code: str) -> bool:
 
     context = ssl.create_default_context()
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        with smtplib.SMTP_SSL(
+                "smtp.gmail.com", 465, context=context, timeout=15) as server:
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, recipient_email, msg.as_string())
         return True
     except Exception as e:
         print(f"[otp] SMTP error: {e}")
+        return False
+
+
+def send_volunteer_activation_email(recipient_email: str, code: str,
+                                    organization_name: str) -> bool:
+    sender_email = os.getenv("SENDER_EMAIL")
+    sender_password = os.getenv("SENDER_PASSWORD")
+    display_name = os.getenv("DISPLAY_NAME", "Moxie")
+    if not sender_email or not sender_password:
+        print("[otp] SENDER_EMAIL or SENDER_PASSWORD not set in environment.")
+        return False
+
+    msg = MIMEMultipart()
+    msg["From"] = f"{display_name} <{sender_email}>"
+    msg["To"] = recipient_email
+    msg["Subject"] = "Activate your Moxie volunteer account"
+    msg.attach(MIMEText(
+        f"Hello,\n\n{organization_name} added you as a volunteer on Moxie.\n"
+        f"Open the Moxie app, choose “Activate imported account”, and enter "
+        f"this code:\n\n{code}\n\n"
+        "The code expires in 24 hours. You will choose your password in "
+        "the app. If you were not expecting this invitation, you can ignore "
+        "this email.\n\n— Moxie",
+        "plain",
+    ))
+
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL(
+                "smtp.gmail.com", 465, context=context, timeout=15) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, recipient_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[otp] Activation email error: {e}")
         return False
 
 

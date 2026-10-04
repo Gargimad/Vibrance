@@ -23,3 +23,23 @@ volunteers. Moxie gives them:
 - Leaderboard of top volunteers.
 - "Needs attention" card surfaces unverified hours and under-filled
   events.
+
+### Migrate an Organization Roster
+- Organization admins can open **Data migration** to update organization
+  details and import a roster from CSV or Excel `.xlsx` files. Excel imports
+  use the first worksheet.
+- The first row must contain an `email` column. Optional volunteer columns
+  are `first_name`, `last_name`, `country`, `zipcode`, `dob`, `gender`,
+  `skills`, and `phone`. Optional organization columns are
+  `organization_name`, `organization_description`, `organization_website`,
+  `organization_city`, and `organization_country`. The page provides a
+  downloadable CSV template.
+- New volunteers receive an email with an eight-digit activation code. They
+  choose **Activate imported account** on the login screen, verify the code,
+  and set their own password. Codes expire after 24 hours and allow five
+  attempts. Existing email addresses and duplicates in the file are skipped.
+- Email invitations use the existing `SENDER_EMAIL`, `SENDER_PASSWORD`, and
+  optional `DISPLAY_NAME` environment settings.
+- This desktop build stores data in a local SQLite database. Volunteers can
+  activate accounts only in an app instance connected to the same database;
+  cross-device invitations require a shared hosted backend.

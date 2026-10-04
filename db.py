@@ -26,7 +26,8 @@ Schema:
 import os
 import sqlite3
 import hashlib
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 
 try:
     import bcrypt
@@ -357,6 +358,16 @@ class Database:
                     ON DELETE CASCADE
             );
         """)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS volunteer_activation_codes (
+                userID INTEGER PRIMARY KEY,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(userID) REFERENCES users(userID)
+                    ON DELETE CASCADE
+            );
+        """)
         self.connection.commit()
 
         if added:
@@ -412,6 +423,219 @@ class Database:
         except sqlite3.IntegrityError:
             self.connection.rollback()
             return None
+
+    def importVolunteerRoster(self, orgID, volunteers):
+        """Create pending volunteer accounts and organization memberships."""
+        imported, skipped = [], []
+        seen = set()
+        try:
+            with self.connection:
+                self.cursor.execute(
+                    "SELECT 1 FROM organizations WHERE orgID = ?", (orgID,)
+                )
+                if not self.cursor.fetchone():
+                    raise ValueError("Organization does not exist.")
+
+                for volunteer in volunteers:
+                    email = str(volunteer.get("email", "")).strip().lower()
+                    code = str(volunteer.get("activation_code", "")).strip()
+                    if not email or not code:
+                        skipped.append((email, "Email and activation code required"))
+                        continue
+                    if email in seen:
+                        skipped.append((email, "Duplicate email in file"))
+                        continue
+                    seen.add(email)
+
+                    self.cursor.execute(
+                        "SELECT userID FROM users WHERE email = ?", (email,)
+                    )
+                    if self.cursor.fetchone():
+                        skipped.append((email, "Account already exists"))
+                        continue
+
+                    self.cursor.execute(
+                        "INSERT INTO users "
+                        "(email, password, role, email_verified, mfa_enabled) "
+                        "VALUES (?, ?, 'volunteer', 0, 1)",
+                        (email, hash_password(secrets.token_urlsafe(32))),
+                    )
+                    userID = self.cursor.lastrowid
+                    self.cursor.execute("""
+                        INSERT INTO volunteer_profiles
+                            (userID, first_name, last_name, country, zipcode,
+                             dob, gender, skills, phone)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        userID,
+                        volunteer.get("first_name", ""),
+                        volunteer.get("last_name", ""),
+                        volunteer.get("country", ""),
+                        volunteer.get("zipcode", ""),
+                        volunteer.get("dob", ""),
+                        volunteer.get("gender", ""),
+                        volunteer.get("skills", ""),
+                        volunteer.get("phone", ""),
+                    ))
+                    self.cursor.execute(
+                        "INSERT INTO org_members (userID, orgID) "
+                        "VALUES (?, ?)",
+                        (userID, orgID),
+                    )
+                    expires = (datetime.now() + timedelta(hours=24)).isoformat(
+                        timespec="seconds"
+                    )
+                    self.cursor.execute(
+                        "INSERT INTO volunteer_activation_codes "
+                        "(userID, code_hash, expires_at) VALUES (?, ?, ?)",
+                        (userID, hashlib.sha256(code.encode()).hexdigest(),
+                         expires),
+                    )
+                    imported.append({"userID": userID, "email": email})
+        except (sqlite3.Error, ValueError) as e:
+            print("importVolunteerRoster error:", e)
+            return None
+        return {"imported": imported, "skipped": skipped}
+
+    def getMigratedVolunteers(self, orgID):
+        self.cursor.execute("""
+            SELECT u.userID, u.email, u.email_verified,
+                   vp.first_name, vp.last_name, vp.country, vp.zipcode,
+                   vp.dob, vp.gender, vp.skills, vp.phone
+            FROM org_members m
+            JOIN users u ON u.userID = m.userID
+            LEFT JOIN volunteer_profiles vp ON vp.userID = u.userID
+            WHERE m.orgID = ? AND u.role = 'volunteer'
+            ORDER BY vp.last_name COLLATE NOCASE,
+                     vp.first_name COLLATE NOCASE, u.email COLLATE NOCASE
+        """, (orgID,))
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def setVolunteerActivationCode(self, orgID, userID, code):
+        expires = (datetime.now() + timedelta(hours=24)).isoformat(
+            timespec="seconds"
+        )
+        try:
+            self.cursor.execute("""
+                INSERT INTO volunteer_activation_codes
+                    (userID, code_hash, expires_at)
+                SELECT u.userID, ?, ?
+                FROM users u
+                JOIN org_members m ON m.userID = u.userID
+                WHERE u.userID = ? AND u.role = 'volunteer'
+                  AND u.email_verified = 0 AND m.orgID = ?
+                ON CONFLICT(userID) DO UPDATE SET
+                    code_hash = excluded.code_hash,
+                    expires_at = excluded.expires_at,
+                    attempts = 0
+            """, (hashlib.sha256(code.encode()).hexdigest(), expires,
+                  userID, orgID))
+            self.connection.commit()
+            return self.cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.connection.rollback()
+            print("setVolunteerActivationCode error:", e)
+            return False
+
+    def activateImportedVolunteer(self, email, code, password):
+        email = email.strip().lower()
+        if not email or len(code.strip()) != 8 or len(password) < 8:
+            return False
+        code_hash = hashlib.sha256(code.strip().encode()).hexdigest()
+        try:
+            with self.connection:
+                self.cursor.execute("""
+                    SELECT u.userID, a.code_hash, a.expires_at, a.attempts
+                    FROM users u
+                    JOIN volunteer_activation_codes a ON a.userID = u.userID
+                    WHERE u.email = ? AND u.role = 'volunteer'
+                      AND u.email_verified = 0
+                """, (email,))
+                row = self.cursor.fetchone()
+                if not row or row["attempts"] >= 5:
+                    return False
+                if datetime.fromisoformat(row["expires_at"]) < datetime.now():
+                    self.cursor.execute(
+                        "DELETE FROM volunteer_activation_codes WHERE userID = ?",
+                        (row["userID"],),
+                    )
+                    return False
+                if not secrets.compare_digest(row["code_hash"], code_hash):
+                    attempts = row["attempts"] + 1
+                    if attempts >= 5:
+                        self.cursor.execute(
+                            "DELETE FROM volunteer_activation_codes "
+                            "WHERE userID = ?", (row["userID"],)
+                        )
+                    else:
+                        self.cursor.execute(
+                            "UPDATE volunteer_activation_codes "
+                            "SET attempts = ? WHERE userID = ?",
+                            (attempts, row["userID"]),
+                        )
+                    return False
+                self.cursor.execute(
+                    "UPDATE users SET password = ?, email_verified = 1 "
+                    "WHERE userID = ?",
+                    (hash_password(password), row["userID"]),
+                )
+                self.cursor.execute(
+                    "DELETE FROM volunteer_activation_codes WHERE userID = ?",
+                    (row["userID"],),
+                )
+            return True
+        except (sqlite3.Error, ValueError) as e:
+            print("activateImportedVolunteer error:", e)
+            return False
+
+    def updateOrganizationProfile(self, userID, orgID, fields):
+        allowed = {"org_name", "description", "website_link", "city", "country"}
+        updates = [(key, value) for key, value in fields.items()
+                   if key in allowed]
+        if not updates:
+            return False
+        try:
+            assignments = ", ".join(f"{key} = ?" for key, _ in updates)
+            values = [value for _, value in updates] + [orgID, userID]
+            self.cursor.execute(
+                f"UPDATE organizations SET {assignments} "
+                "WHERE orgID = ? AND userID = ?",
+                values,
+            )
+            self.connection.commit()
+            return self.cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.connection.rollback()
+            print("updateOrganizationProfile error:", e)
+            return False
+
+    def updateImportedVolunteerProfile(self, orgID, userID, fields):
+        allowed = {"first_name", "last_name", "country", "zipcode",
+                   "dob", "gender", "skills", "phone"}
+        updates = [(key, value) for key, value in fields.items()
+                   if key in allowed]
+        if not updates:
+            return False
+        try:
+            self.cursor.execute(
+                "SELECT 1 FROM org_members WHERE orgID = ? AND userID = ?",
+                (orgID, userID),
+            )
+            if not self.cursor.fetchone():
+                return False
+            assignments = ", ".join(f"{key} = ?" for key, _ in updates)
+            values = [value for _, value in updates] + [userID]
+            self.cursor.execute(
+                f"UPDATE volunteer_profiles SET {assignments} "
+                "WHERE userID = ?",
+                values,
+            )
+            self.connection.commit()
+            return self.cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.connection.rollback()
+            print("updateImportedVolunteerProfile error:", e)
+            return False
 
     def email_exists(self, email):
         self.cursor.execute(
@@ -1038,29 +1262,45 @@ class Database:
             SELECT
                 u.userID,
                 u.email,
+                u.email_verified,
                 vp.first_name,
                 vp.last_name,
                 vp.phone,
                 vp.skills,
-                COUNT(s.signupID) AS total_signups,
-                COALESCE(SUM(CASE WHEN s.no_show = 0
-                                  THEN s.hours_logged ELSE 0 END), 0)
-                    AS total_hours,
-                COALESCE(SUM(CASE WHEN s.no_show = 1 THEN 1 ELSE 0 END), 0)
-                    AS no_shows,
-                MAX(o.event_date) AS last_event_date,
+                COALESCE(stats.total_signups, 0) AS total_signups,
+                COALESCE(stats.total_hours, 0) AS total_hours,
+                COALESCE(stats.no_shows, 0) AS no_shows,
+                stats.last_event_date,
                 COALESCE(f.banned, 0) AS banned
-            FROM event_signups s
-            JOIN opportunities o ON s.opportunityID = o.opportunityID
-            JOIN users u ON s.userID = u.userID
+            FROM (
+                SELECT userID FROM org_members WHERE orgID = ?
+                UNION
+                SELECT DISTINCT s.userID
+                FROM event_signups s
+                JOIN opportunities o ON o.opportunityID = s.opportunityID
+                WHERE o.orgID = ? AND s.status = 'registered'
+            ) roster
+            JOIN users u ON u.userID = roster.userID
             LEFT JOIN volunteer_profiles vp ON u.userID = vp.userID
             LEFT JOIN org_volunteer_flags f
-                ON f.orgID = o.orgID AND f.userID = u.userID
-            WHERE o.orgID = ?
-            AND s.status = 'registered'
-            GROUP BY u.userID
+                ON f.orgID = ? AND f.userID = u.userID
+            LEFT JOIN (
+                SELECT s.userID,
+                       COUNT(s.signupID) AS total_signups,
+                       SUM(CASE WHEN s.no_show = 0
+                                THEN s.hours_logged ELSE 0 END)
+                           AS total_hours,
+                       SUM(CASE WHEN s.no_show = 1 THEN 1 ELSE 0 END)
+                           AS no_shows,
+                       MAX(o.event_date) AS last_event_date
+                FROM event_signups s
+                JOIN opportunities o ON o.opportunityID = s.opportunityID
+                WHERE o.orgID = ? AND s.status = 'registered'
+                GROUP BY s.userID
+            ) stats ON stats.userID = u.userID
+            WHERE u.role = 'volunteer'
             ORDER BY total_hours DESC, u.userID ASC
-        """, (orgID,))
+        """, (orgID, orgID, orgID, orgID))
         return self.cursor.fetchall()
 
     def getVolunteerHistoryForOrg(self, orgID, userID):

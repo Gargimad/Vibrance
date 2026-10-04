@@ -24,8 +24,8 @@ class VoiceWorker(QThread):
 
         # Use the default microphone
         with sr.Microphone() as source:
-            # Adjust for ambient noise before listening
-            self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            self.recognizer.pause_threshold = 0.6
+            self.recognizer.adjust_for_ambient_noise(source, duration=0.25)
 
             try:
                 # Listen for speech (blocks until the user stops talking)
