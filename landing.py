@@ -48,6 +48,8 @@ from orgRegister import OrganizationRegistration
 from volunteerHome import VolunteerHome, TAB_PROFILE
 from orgDashboard import OrgDashboard
 from volunteerPage import VolunteerPage
+from globalMic import GlobalMicButton
+
 
 
 # Page-stack indices
@@ -90,6 +92,8 @@ class Landing(QMainWindow):
         self.db = Database()
 
         self._build_ui()
+        self.global_mic = GlobalMicButton(self)
+        self.global_mic.reposition()
         self._wire_signals()
         self._set_nav_mode(NAV_GUEST)
 
@@ -134,7 +138,9 @@ class Landing(QMainWindow):
         self.navTabsLayout.setSpacing(8)
 
         self.btnConnect = QPushButton("Register ▾")
-        self.btnConnect.setObjectName(theme.NAV_DROPDOWN)
+        self.btnConnect.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
 
         register_menu = QMenu(self)
         action_vol = QAction("Register as a Volunteer", self)
@@ -146,12 +152,18 @@ class Landing(QMainWindow):
         self.btnConnect.setMenu(register_menu)
 
         self.btnLogin = QPushButton("Login")
+        self.btnLogin.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.btnLogin.clicked.connect(self.handle_login_nav_click)
 
         self.btnThemeToggle = QPushButton(
             "🌙" if not self.is_dark_mode else "☀"
         )
         self.btnThemeToggle.setToolTip("Toggle dark / light mode")
+        self.btnThemeToggle.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.btnThemeToggle.clicked.connect(self.toggle_theme)
 
         h.addWidget(self.nav_logo)
@@ -160,9 +172,6 @@ class Landing(QMainWindow):
         h.addWidget(self.btnConnect)
         h.addWidget(self.btnLogin)
         h.addWidget(self.btnThemeToggle)
-
-        for btn in (self.btnConnect, self.btnLogin, self.btnThemeToggle):
-            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         return nav
 
     def _populate_page_stack(self):
@@ -331,48 +340,23 @@ class Landing(QMainWindow):
         self._nav_buttons = {}
 
         logged_in = mode != NAV_GUEST
+
+        # Every nav tab is a plain text button — no toggle styling,
+        # no pill, no highlight. Matches the guest nav bar exactly.
         for key, label, callback in self._nav_spec(mode):
             btn = QPushButton(label)
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-            if logged_in:
-                btn.setObjectName(theme.VIEW_TOGGLE_BTN)
-                btn.setCheckable(True)
-            btn.clicked.connect(lambda _checked=False, cb=callback: cb())
+            btn.clicked.connect(
+                lambda _checked=False, cb=callback: cb()
+            )
             self.navTabsLayout.addWidget(btn)
-            if logged_in:
-                self._nav_buttons[key] = btn
 
         self.btnConnect.setVisible(not logged_in)
         self.btnLogin.setText("Log Out" if logged_in else "Login")
-        self._sync_nav_highlight()
-
     def _active_nav_key(self):
-        page = self.pageStack.currentWidget()
-        if self.nav_mode == NAV_VOLUNTEER:
-            if page is self.volunteerHomePage:
-                return ("vol_home", self.volunteerHomePage.current_tab())
-            if page is self.volunteerListingPage:
-                return ("listing", None)
-        elif self.nav_mode == NAV_ORG:
-            if page is self.orgDashboard:
-                # Prefer the nav-index method so the form page (which
-                # isn't in the nav) leaves nothing highlighted.
-                fn = getattr(self.orgDashboard, "current_nav_tab", None)
-                if callable(fn):
-                    idx = fn()
-                    return ("org", idx) if idx >= 0 else None
-                current = getattr(self.orgDashboard, "current_tab", None)
-                return ("org", current() if callable(current) else 0)
-            if page is self.faqPage:
-                return ("faq", None)
         return None
-
     def _sync_nav_highlight(self):
-        if not self._nav_buttons:
-            return
-        active = self._active_nav_key()
-        for key, btn in self._nav_buttons.items():
-            btn.setChecked(key == active)
+        return
 
     # ── Signals ───────────────────────────────────────────────────────────
     def _wire_signals(self):
@@ -536,7 +520,11 @@ class Landing(QMainWindow):
 
         hero_pixmap = QPixmap(path).scaledToHeight(500, smooth)
         self.hero_logo.setPixmap(hero_pixmap)
-
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "global_mic"):
+            self.global_mic.reposition()
+            self.global_mic.raise_()
     # ── Utilities ─────────────────────────────────────────────────────────
     def _app(self):
         from PyQt6.QtWidgets import QApplication

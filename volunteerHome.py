@@ -31,6 +31,8 @@ from PyQt6.QtWidgets import(
 
 import theme
 from chatBubble import ChatView
+from dateFormat import format_range, format_time_range, format_event_when
+from volunteerNotifications import VolunteerNotifications
 
 
 # ── Constants ─────────────────────────────────────────────────────────────
@@ -67,20 +69,18 @@ def org_color(org_name):
 
 
 def time_range(row):
-    start, end = rget(row, "start_time"), rget(row, "end_time")
-    if not start:
-        return ""
-    return f" · {start}" + (f"–{end}" if end else "")
+    t = format_time_range(
+        rget(row, "start_time", ""),
+        rget(row, "end_time", ""),
+    )
+    return f" · {t}" if t else ""
 
 
 def date_range(row):
-    start = str(rget(row, "event_date", "") or "").strip()
-    end = str(rget(row, "event_end_date", "") or "").strip()
-    if not start:
-        return "TBD"
-    if end and end != start:
-        return f"{start} → {end}"
-    return start
+    return format_range(
+        rget(row, "event_date", ""),
+        rget(row, "event_end_date", ""),
+    )
 
 
 def expand_to_days(start_str, end_str):
@@ -255,7 +255,7 @@ class ChatWorker(QThread):
             self.failed.emit(f"Couldn't reach the assistant: {e}")
 
 # ── Main widget ───────────────────────────────────────────────────────────
-class VolunteerHome(QWidget):
+class VolunteerHome(VolunteerNotifications, QWidget):
     TAB_LABELS = [
         "Dashboard", "Calendar", "My Events", "Organizations",
         "Notifications", "Help", "Profile",
@@ -957,29 +957,7 @@ class VolunteerHome(QWidget):
             self._refresh_orgs()
 
     # ── 4. Notifications ──────────────────────────────────────────────────
-    def _build_notifications_page(self):
-        page, self.notif_layout, _ = self._scroll_page(
-            "Notifications", spacing=8
-        )
-        return page
-
-    def _refresh_notifications(self):
-        if not (self.db and self.userID):
-            return
-        self._clear(self.notif_layout)
-        rows = self._db("getNotifications", self.userID, default=[])
-
-        if not rows:
-            self._empty(self.notif_layout, "No notifications yet.")
-            return
-        for r in rows:
-            lbl = QLabel(
-                f"<b>{html.escape(str(r['created_at']))}</b> — "
-                f"{html.escape(str(r['message']))}"
-            )
-            lbl.setObjectName(theme.EVENT_META_VALUE)
-            lbl.setWordWrap(True)
-            self._add(self.notif_layout, lbl)
+    
 
     # ── 5. Help ───────────────────────────────────────────────────────────
     def _build_help_page(self):
@@ -1040,10 +1018,11 @@ class VolunteerHome(QWidget):
                 end = d
 
             if end >= today:
-                upcoming.append(
-                    f"- {rget(r, 'title', 'Untitled')} on {date_range(r)}"
-                    f"{time_range(r)} ({rget(r, 'org_name', 'Independent')})"
-                )
+                    upcoming.append(
+                        f"- {rget(r, 'title', 'Untitled')} — "
+                        f"{format_event_when(r)} "
+                        f"({rget(r, 'org_name', 'Independent')})"
+                    )
 
         upcoming_txt = "\n".join(upcoming[:15]) or "NONE (confirmed) — this user has no upcoming events."
 

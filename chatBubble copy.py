@@ -3,7 +3,7 @@ chatBubble.py — A self-contained messaging-style chat widget for Moxie.
 
 Public API (all on ChatView):
     view = ChatView(greeting="...", parent=None, history_path=...)
-        # history_path: JSON file where every chat is kept between runs
+        # history_path: JSON file used to keep the chat between runs
         # (default ~/.moxie/chat_history.json, None disables saving)
     view.set_send_handler(fn)              # fn(text) called on send
     view.set_system_prompt_provider(fn)    # fn() -> str, refreshed per send
@@ -11,10 +11,7 @@ Public API (all on ChatView):
     view.on_reply(text)                    # call when the AI replies
     view.on_error(message)                 # call when the AI fails
     view.set_busy(bool)                    # lock/unlock the composer
-    view.reset()                           # start a NEW chat (old ones are kept)
-    view.show_history()                    # open the list of past chats
-    view.open_session(session_id)          # switch to a past chat
-    view.delete_session(session_id)        # delete a past chat
+    view.reset()                           # clear and greet again
     view.history                           # list[{role, content}, ...]
 
 ChatView knows nothing about HTTP or Groq. The caller wires a backend
@@ -29,14 +26,12 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QScrollArea, QLineEdit, QSizePolicy, QDialog, QListWidget,
-    QListWidgetItem, QMessageBox,
+    QScrollArea, QLineEdit, QSizePolicy,
 )
 
 
 # Emoji icons. Each is a single codepoint (no variation selector), which
 # renders at full width on Windows instead of a thin, narrow glyph.
-HISTORY_GLYPH = "⌛︎"
 SEND_GLYPH = "➤"
 MIC_GLYPH = "🎙️"
 NEW_CHAT_GLYPH = "✛"
@@ -51,17 +46,15 @@ ICON_BORDER = "#8C8C8C"
 BTN_SIZE = 40
 BTN_FONT_PX = 20
 
-# Where chats are saved between sessions. Pass history_path=None to
-# ChatView to disable saving.
+# Where the chat log is saved between sessions, and how many messages
+# to keep on disk. Pass history_path=None to ChatView to disable saving.
 DEFAULT_HISTORY_PATH = Path.home() / ".moxie" / "chat_history.json"
-MAX_MESSAGES_PER_CHAT = 500
-MAX_SAVED_CHATS = 200
+MAX_SAVED_MESSAGES = 500
 
 
 class ChatView(QWidget):
     """A messaging-style chat panel with bubbles, grouping, typing dots,
-    timestamps, a date separator, a rounded composer, and a browsable
-    list of past chats. One class."""
+    timestamps, a date separator, and a rounded composer. One class."""
 
     def __init__(self,
                  greeting="Hi! I'm Moxie. How can I help?",
@@ -70,8 +63,7 @@ class ChatView(QWidget):
         super().__init__(parent)
 
         self._history_path = history_path   # None = don't persist
-        self._sessions = []                 # every saved chat
-        self._current = None                # active chat (None = new, empty)
+        self._log = []                      # saved transcript with dates
         self._greeting = greeting
         self._send_handler = None
         self._system_prompt_provider = None
@@ -80,7 +72,7 @@ class ChatView(QWidget):
         self._typing_step = 0
         self._last_who = None
         self._is_busy = False
-        self.history = []          # [{role, content}, ...] sent to the model
+        self.history = []          # [{role, content}, ...]
         self._voice_worker = None
 
         self._build_ui()
@@ -119,7 +111,8 @@ class ChatView(QWidget):
     def set_busy(self, busy):
         """
         While a reply is in flight, only the input is locked. The
-        composer buttons stay enabled and visible regardless of state.
+        three composer buttons stay enabled and visible regardless
+        of state.
         """
         self._is_busy = busy
         self.input.setEnabled(not busy)
@@ -127,113 +120,124 @@ class ChatView(QWidget):
             self.input.setFocus()
 
     def reset(self):
-        """Start a new chat. The current chat stays saved in the
-        history list; nothing is deleted."""
-        self._current = None
-        self._render_session(None)
-        self._write_store()
+        """Start a new chat: clear the transcript and saved history,
+        then greet again."""
+        self._clear_transcript()
+        self.history = []
+        self._log = []
+        self._delete_saved()
+        self._show_greeting()
 
-    def open_session(self, session_id):
-        """Switch to a past chat and continue it from where it ended."""
-        if self._is_busy:
+    # ── Persistence ───────────────────────────────────────────────────
+    def _clear_transcript(self):
+        while self.chat_layout.count() > 1:
+            item = self.chat_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
+        self._hide_typing()
+        self._last_who = None
+
+    def _show_greeting(self):
+        self._append_date_separator("Today")
+        self._append_bubble(self._greeting, who="assistant")
+
+    def _trim_history(self):
+        """Keep the model-facing history short and starting on a user turn."""
+        self.history = self.history[-20:]
+        while self.history and self.history[0]["role"] != "user":
+            self.history.pop(0)
+
+    def _log_message(self, role, content):
+        """Add a message to the saved transcript and write it to disk."""
+        now = datetime.now()
+        self._log.append({
+            "role": role,
+            "content": content,
+            "date": now.strftime("%Y-%m-%d"),
+            "time": now.strftime("%H:%M"),
+        })
+        self._log = self._log[-MAX_SAVED_MESSAGES:]
+        self._write_saved()
+
+    def _read_saved(self):
+        if not self._history_path:
+            return []
+        try:
+            with open(self._history_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return []
+        if not isinstance(data, list):
+            return []
+        return [
+            e for e in data
+            if isinstance(e, dict)
+            and e.get("role") in ("user", "assistant")
+            and isinstance(e.get("content"), str)
+        ]
+
+    def _write_saved(self):
+        if not self._history_path:
             return
-        session = self._find_session(session_id)
-        if session is None:
+        try:
+            path = Path(self._history_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self._log, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            print(f"[chat] Could not save history: {e}")
+
+    def _delete_saved(self):
+        if not self._history_path:
             return
-        self._render_session(session)
-        self._write_store()
+        try:
+            Path(self._history_path).unlink(missing_ok=True)
+        except OSError as e:
+            print(f"[chat] Could not delete history: {e}")
 
-    def delete_session(self, session_id):
-        """Permanently delete a saved chat."""
-        session = self._find_session(session_id)
-        if session is None:
+    @staticmethod
+    def _date_label(iso_date):
+        try:
+            d = date.fromisoformat(iso_date)
+        except ValueError:
+            return iso_date
+        today = date.today()
+        if d == today:
+            return "Today"
+        if d == today - timedelta(days=1):
+            return "Yesterday"
+        return f"{d:%B} {d.day}, {d.year}"
+
+    def _restore(self):
+        """Rebuild the transcript from disk, or greet if there's none."""
+        self._clear_transcript()
+        saved = self._read_saved()
+        if not saved:
+            self.history = []
+            self._log = []
+            self._show_greeting()
             return
-        self._sessions = [s for s in self._sessions if s is not session]
-        if self._current is session:
-            self._current = None
-            self._render_session(None)
-        self._write_store()
 
-    def show_history(self):
-        """Open a window listing past chats. Open, continue or delete."""
-        if self._is_busy:
-            return
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Chat history")
-        dlg.resize(420, 480)
-        lay = QVBoxLayout(dlg)
-
-        lst = QListWidget()
-        lay.addWidget(lst, 1)
-
-        empty = QLabel("No past chats yet. Start talking and they'll "
-                       "show up here.")
-        empty.setWordWrap(True)
-        lay.addWidget(empty)
-
-        row = QHBoxLayout()
-        open_btn = QPushButton("Open")
-        del_btn = QPushButton("Delete")
-        close_btn = QPushButton("Close")
-        row.addWidget(open_btn)
-        row.addWidget(del_btn)
-        row.addStretch(1)
-        row.addWidget(close_btn)
-        lay.addLayout(row)
-
-        def refill():
-            lst.clear()
-            ordered = sorted(
-                self._sessions,
-                key=lambda s: s.get("updated", ""),
-                reverse=True,
+        last_date = None
+        for entry in saved:
+            d = entry.get("date", "")
+            if d and d != last_date:
+                self._append_date_separator(self._date_label(d))
+                last_date = d
+                self._last_who = None   # new day starts a fresh group
+            self._append_bubble(
+                entry["content"],
+                who=entry["role"],
+                timestamp=entry.get("time"),
             )
-            for s in ordered:
-                if not s["messages"]:
-                    continue
-                day, _, hm = s.get("updated", "").partition(" ")
-                when = f"{self._date_label(day)} {hm}".strip()
-                n = len(s["messages"])
-                current = "  (current)" if s is self._current else ""
-                item = QListWidgetItem(
-                    f"{s['title'] or '(untitled)'}\n"
-                    f"{when} - {n} messages{current}"
-                )
-                item.setData(Qt.ItemDataRole.UserRole, s["id"])
-                lst.addItem(item)
-            if lst.count():
-                lst.setCurrentRow(0)
-            empty.setVisible(lst.count() == 0)
 
-        def selected_id():
-            item = lst.currentItem()
-            return item.data(Qt.ItemDataRole.UserRole) if item else None
-
-        def do_open():
-            sid = selected_id()
-            if sid:
-                dlg.accept()
-                self.open_session(sid)
-
-        def do_delete():
-            sid = selected_id()
-            if not sid:
-                return
-            answer = QMessageBox.question(
-                dlg, "Delete chat", "Delete this chat permanently?"
-            )
-            if answer == QMessageBox.StandardButton.Yes:
-                self.delete_session(sid)
-                refill()
-
-        lst.itemDoubleClicked.connect(lambda _item: do_open())
-        open_btn.clicked.connect(lambda: do_open())
-        del_btn.clicked.connect(lambda: do_delete())
-        close_btn.clicked.connect(dlg.reject)
-
-        refill()
-        dlg.exec()
+        self._log = saved[-MAX_SAVED_MESSAGES:]
+        self.history = [
+            {"role": e["role"], "content": e["content"]} for e in saved
+        ]
+        self._trim_history()
 
     # ── UI construction ───────────────────────────────────────────────
     def _build_ui(self):
@@ -288,7 +292,7 @@ class ChatView(QWidget):
         self.input.returnPressed.connect(self._on_send_clicked)
         cl.addWidget(self.input, 1)
 
-        # ── Four emoji buttons — same size, same style ────────────
+        # ── Three emoji buttons — same size, same style ───────────
         self.send_btn = self._make_icon_button(
             SEND_GLYPH, "Send", BTN_SIZE, font_px=BTN_FONT_PX
         )
@@ -301,12 +305,6 @@ class ChatView(QWidget):
         self.mic_btn.setCheckable(True)
         self.mic_btn.clicked.connect(self._on_mic_clicked)
         cl.addWidget(self.mic_btn, 0)
-
-        self.history_btn = self._make_icon_button(
-            HISTORY_GLYPH, "Chat history", BTN_SIZE, font_px=BTN_FONT_PX
-        )
-        self.history_btn.clicked.connect(lambda: self.show_history())
-        cl.addWidget(self.history_btn, 0)
 
         self.clear_btn = self._make_icon_button(
             NEW_CHAT_GLYPH, "New chat", BTN_SIZE, font_px=BTN_FONT_PX
@@ -345,204 +343,6 @@ class ChatView(QWidget):
             f"QPushButton:checked {{ background-color: {ICON_CHECKED_BG}; }}"
         )
         return btn
-
-    # ── Saved chats (persistence) ─────────────────────────────────────
-    #
-    # File format:
-    #   {"current": "<id>" | null,
-    #    "sessions": [{"id", "title", "created", "updated",
-    #                  "messages": [{"role", "content", "date", "time"}]}]}
-    #
-    def _find_session(self, session_id):
-        for s in self._sessions:
-            if s["id"] == session_id:
-                return s
-        return None
-
-    @staticmethod
-    def _make_title(text):
-        line = " ".join(text.split())
-        return line if len(line) <= 40 else line[:37] + "..."
-
-    @staticmethod
-    def _make_session(messages):
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        first_user = next(
-            (m["content"] for m in messages if m["role"] == "user"), ""
-        )
-        return {
-            "id": datetime.now().strftime("%Y%m%d%H%M%S%f"),
-            "title": ChatView._make_title(first_user),
-            "created": now,
-            "updated": now,
-            "messages": messages,
-        }
-
-    @staticmethod
-    def _clean_message(m):
-        if (isinstance(m, dict)
-                and m.get("role") in ("user", "assistant")
-                and isinstance(m.get("content"), str)):
-            return {
-                "role": m["role"],
-                "content": m["content"],
-                "date": str(m.get("date", "")),
-                "time": str(m.get("time", "")),
-            }
-        return None
-
-    def _read_store(self):
-        """Return (sessions, current_id) from disk."""
-        if not self._history_path:
-            return [], None
-        try:
-            with open(self._history_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            return [], None
-
-        # Older versions saved one flat list of messages.
-        if isinstance(data, list):
-            msgs = [m for m in map(self._clean_message, data) if m]
-            if not msgs:
-                return [], None
-            session = self._make_session(msgs)
-            return [session], session["id"]
-
-        if not isinstance(data, dict):
-            return [], None
-
-        sessions = []
-        for raw in data.get("sessions", []):
-            if not isinstance(raw, dict):
-                continue
-            msgs = [m for m in map(self._clean_message,
-                                   raw.get("messages", [])) if m]
-            if not msgs:
-                continue
-            fallback = self._make_session(msgs)
-            sessions.append({
-                "id": str(raw.get("id") or fallback["id"]),
-                "title": str(raw.get("title") or fallback["title"]),
-                "created": str(raw.get("created") or fallback["created"]),
-                "updated": str(raw.get("updated") or fallback["updated"]),
-                "messages": msgs,
-            })
-        return sessions, data.get("current")
-
-    def _write_store(self):
-        if not self._history_path:
-            return
-        payload = {
-            "current": self._current["id"] if self._current else None,
-            "sessions": [s for s in self._sessions if s["messages"]],
-        }
-        try:
-            path = Path(self._history_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            print(f"[chat] saved {len(payload['sessions'])} chat(s) to {path}")
-        except OSError as e:
-            print(f"[chat] Could not save history: {e}")
-
-    def _log_message(self, role, content):
-        """Add a message to the current chat and write it to disk."""
-        now = datetime.now()
-        if self._current is None:
-            self._current = self._make_session([])
-            self._sessions.append(self._current)
-
-        s = self._current
-        s["messages"].append({
-            "role": role,
-            "content": content,
-            "date": now.strftime("%Y-%m-%d"),
-            "time": now.strftime("%H:%M"),
-        })
-        s["messages"] = s["messages"][-MAX_MESSAGES_PER_CHAT:]
-        s["updated"] = now.strftime("%Y-%m-%d %H:%M")
-        if role == "user" and not s["title"]:
-            s["title"] = self._make_title(content)
-
-        # Keep the list from growing forever (never drop the active chat).
-        if len(self._sessions) > MAX_SAVED_CHATS:
-            others = sorted(
-                (x for x in self._sessions if x is not s),
-                key=lambda x: x.get("updated", ""),
-            )
-            drop = others[:len(self._sessions) - MAX_SAVED_CHATS]
-            self._sessions = [x for x in self._sessions if x not in drop]
-
-        self._write_store()
-
-    def _restore(self):
-        """On startup: reopen the chat you were last in."""
-        self._sessions, current_id = self._read_store()
-        print(f"[chat] history file: {self._history_path} "
-              f"-> {len(self._sessions)} saved chat(s)")
-        self._current = self._find_session(current_id)
-        self._render_session(self._current)
-
-    def _render_session(self, session):
-        """Show a saved chat (or the greeting if session is None)."""
-        self._clear_transcript()
-        self._current = session
-        msgs = session["messages"] if session else []
-
-        if not msgs:
-            self.history = []
-            self._show_greeting()
-            return
-
-        last_date = None
-        for m in msgs:
-            d = m.get("date", "")
-            if d and d != last_date:
-                self._append_date_separator(self._date_label(d))
-                last_date = d
-                self._last_who = None   # new day starts a fresh group
-            self._append_bubble(
-                m["content"], who=m["role"], timestamp=m.get("time") or None
-            )
-
-        self.history = [
-            {"role": m["role"], "content": m["content"]} for m in msgs
-        ]
-        self._trim_history()
-
-    def _clear_transcript(self):
-        while self.chat_layout.count() > 1:
-            item = self.chat_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.setParent(None)
-                w.deleteLater()
-        self._hide_typing()
-        self._last_who = None
-
-    def _show_greeting(self):
-        self._append_date_separator("Today")
-        self._append_bubble(self._greeting, who="assistant")
-
-    def _trim_history(self):
-        """Keep the model-facing history short and starting on a user turn."""
-        self.history = self.history[-20:]
-        while self.history and self.history[0]["role"] != "user":
-            self.history.pop(0)
-
-    @staticmethod
-    def _date_label(iso_date):
-        try:
-            d = date.fromisoformat(iso_date)
-        except ValueError:
-            return iso_date
-        today = date.today()
-        if d == today:
-            return "Today"
-        if d == today - timedelta(days=1):
-            return "Yesterday"
-        return f"{d:%B} {d.day}, {d.year}"
 
     # ── Bubble rendering ──────────────────────────────────────────────
     def _append_bubble(self, text, who="assistant", timestamp=None):

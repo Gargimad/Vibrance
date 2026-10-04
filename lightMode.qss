@@ -1,8 +1,10 @@
 /* ==========================================================================
    MOXIE BRAND PALETTE — LIGHT MODE
-   (QSS has no variables, so use Find & Replace on these hex values to retheme)
 
-   Design rule: NO rounded corners anywhere. Every border-radius is 0.
+   Design rule:
+     - Square corners everywhere. Every border-radius is 0.
+     - Exception: the search bar is a rounded pill (border-radius: 22px).
+       This is the one "soft" element in the app and is intentional.
 
    Brand core
    --------------------------------------------------------------------------
@@ -14,11 +16,13 @@
 
    Surfaces & borders
    --------------------------------------------------------------------------
-   Nav / Header Surface    #c1aea8   nav bar, bottom bar, page header
-   Filter Surface          #cbb9b4   search + filter strips
+   Nav / Header Surface    #C1AEA8   nav bar, bottom bar, page header
+   Filter Surface          #CBB9B4   search + filter strips
    Card Surface            #F5F0EE   cards, popups, dropdown lists, dialogs
    Input Surface           #FBF8F7   input background (unfocused)
+   Input Surface Focus     #FFFFFF   input background (focused)
    Border                  #BFAFB3   card + input borders
+   Border Soft             #D8DCE3   card borders on white cards
    Disabled Surface        #E4DAD6   disabled button background
 
    Text
@@ -26,14 +30,15 @@
    Text on Dark            #F5F0EE   text on purple / blueberry buttons
    Text Primary            #2D1A3E   input text, body text
    Text Label              #4E3C5C   field labels, descriptions
-   Text Muted              #6B5B77   subtitles, secondary text (AA contrast
-                                     on the card surface)
+   Text Muted              #6B5B77   subtitles, secondary text
+   Text Disabled           #A89AA0   disabled button text
 
    Interaction
    --------------------------------------------------------------------------
    Selection BG            #2D1A3E
    Selection Text          #F5F0EE
    Hover BG (on nav)       rgba(45, 26, 62, 0.10)
+   Recording Red           #C0392B   mic listening state
 
    Focus rings (keyboard navigation)
    --------------------------------------------------------------------------
@@ -42,13 +47,13 @@
    Padding is reduced by the extra border width so nothing shifts.
    ========================================================================== */
 
-/* Window & General Layout */
+/* ── Window & General Layout ───────────────────────────────────── */
 QMainWindow {
     background-color: #D8CBC7;
 }
 
 #NavBar {
-    background-color: #c1aea8;
+    background-color: #C1AEA8;
     border-bottom: 1px solid rgba(216, 203, 199, 0.15);
     color: #2D1A3E;
 }
@@ -58,12 +63,13 @@ QMainWindow {
     font-size: 18px;
     font-weight: bold;
 }
+
 #HeroLogo {
     font-size: 50px;
 }
 
 #BottomBar {
-    background-color: #c1aea8;
+    background-color: #C1AEA8;
     border-top: 1px solid #BFAFB3;
 }
 
@@ -72,16 +78,18 @@ QMainWindow {
     color: #2D1A3E;
 }
 
-/* Form Container Card — square, with a Blueberry rule across the top */
+/* ── Form Container Card ───────────────────────────────────────── */
 #RegisterCard {
     background-color: #F5F0EE;
     border: 1px solid #BFAFB3;
     border-top: 4px solid #3D4BA8;
     border-radius: 0px;
 }
+
 #PasswordInput {
     padding-right: 32px;
 }
+
 #FormTitle {
     font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
     font-size: 30px;
@@ -101,7 +109,7 @@ QMainWindow {
     margin-top: 2px;
 }
 
-/* Form Inputs */
+/* ── Form Inputs ───────────────────────────────────────────────── */
 QLineEdit, QDateEdit, QComboBox {
     background-color: #FBF8F7;
     border: 1px solid #BFAFB3;
@@ -113,14 +121,12 @@ QLineEdit, QDateEdit, QComboBox {
     selection-color: #F5F0EE;
 }
 
-/* Focus: thicker border, padding reduced by 1px so nothing shifts */
 QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
     border: 2px solid #3D4BA8;
     padding: 10px 13px;
     background-color: #FFFFFF;
 }
 
-/* One-time code field on the verification step */
 #OtpInput {
     font-size: 26px;
     padding: 14px;
@@ -129,7 +135,7 @@ QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
     padding: 13px;
 }
 
-/* Inline Action Icons (Password Toggle Eye) */
+/* ── Inline Action Icons (Password Toggle Eye) ─────────────────── */
 QLineEdit QToolButton {
     border: none;
     background: transparent;
@@ -141,7 +147,7 @@ QLineEdit QToolButton:hover {
     color: #3D4BA8;
 }
 
-/* Dropdown styling for QComboBox */
+/* ── ComboBox dropdown ─────────────────────────────────────────── */
 QComboBox::drop-down {
     border: none;
     padding-right: 10px;
@@ -156,7 +162,7 @@ QComboBox QAbstractItemView {
     selection-color: #F5F0EE;
 }
 
-/* Date Picker Popup Styling */
+/* ── Date Picker Popup ─────────────────────────────────────────── */
 QCalendarWidget QWidget {
     background-color: #F5F0EE;
     color: #2D1A3E;
@@ -168,7 +174,7 @@ QCalendarWidget QAbstractItemView:enabled {
     selection-color: #F5F0EE;
 }
 
-/* CAPTCHA */
+/* ── CAPTCHA ───────────────────────────────────────────────────── */
 #CaptchaImage {
     background-color: #FBF8F7;
     border: 1px solid #BFAFB3;
@@ -189,7 +195,12 @@ QCalendarWidget QAbstractItemView:enabled {
     border: 1px solid #3D4BA8;
 }
 
-/* Push Buttons */
+#CaptchaRefreshBtn:focus {
+    border: 2px solid #3D4BA8;
+    padding: 0px;
+}
+
+/* ── Push Buttons (defaults) ───────────────────────────────────── */
 QPushButton {
     background-color: transparent;
     color: #F5F0EE;
@@ -213,7 +224,7 @@ QPushButton::menu-indicator {
     width: 0px;
 }
 
-/* Specific Action Buttons */
+/* ── Primary / Secondary Buttons ───────────────────────────────── */
 #PrimaryBtn {
     background-color: #2D1A3E;
     color: #F5F0EE;
@@ -250,11 +261,7 @@ QPushButton::menu-indicator {
     padding: 6px 14px;
 }
 
-#CaptchaRefreshBtn:focus {
-    border: 2px solid #3D4BA8;
-    padding: 0px;
-}
-
+/* ── Menus ─────────────────────────────────────────────────────── */
 QMenu {
     background-color: #F5F0EE;
     border: 1px solid #BFAFB3;
@@ -272,7 +279,7 @@ QMenu::item:selected {
     color: #F5F0EE;
 }
 
-/* Scroll bars — slim and square */
+/* ── Scrollbars ────────────────────────────────────────────────── */
 QScrollBar:vertical {
     background: transparent;
     width: 10px;
@@ -314,6 +321,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
     background: none;
 }
 
+/* ── Nav bar button tweaks ─────────────────────────────────────── */
 #NavBar QPushButton {
     color: #2D1A3E;
 }
@@ -322,7 +330,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
     background-color: rgba(45, 26, 62, 0.10);
 }
 
-/* Registration page backdrop — matches the landing page */
+/* ── Registration page backdrop ────────────────────────────────── */
 #RegisterScroll,
 #RegisterScroll > QWidget#qt_scrollarea_viewport,
 #RegisterScrollContent {
@@ -330,50 +338,143 @@ QScrollBar::add-page, QScrollBar::sub-page {
     border: none;
 }
 
-/* Text styling */
+/* ── Text styling ──────────────────────────────────────────────── */
 #InstructionText {
-    color: #1f2328;
+    color: #1F2328;
     font-size: 16px;
     font-weight: 600;
     font-family: "Segoe UI", "SF Pro Display", Arial, sans-serif;
 }
 
 /* ==========================================================================
-   SEARCH BAR — strip directly beneath the nav bar
+   SEARCH BAR — rounded pill, the one soft element
    ========================================================================== */
 #SearchBar {
-    background-color: #cbb9b4;
+    background-color: #CBB9B4;
     border-bottom: 1px solid #BFAFB3;
-}
-
-#SearchCategoryCombo {
-    background-color: #FBF8F7;
-    min-height: 18px;
+    padding: 4px 0;
 }
 
 #SearchInput {
     background-color: #FBF8F7;
+    border: 1px solid #BFAFB3;
+    border-radius: 22px;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: #2D1A3E;
     min-height: 18px;
+    selection-background-color: #2D1A3E;
+    selection-color: #F5F0EE;
+}
+
+#SearchInput:focus {
+    border: 2px solid #3D4BA8;
+    padding: 9px 15px;
+    background-color: #FFFFFF;
+}
+
+#SearchCategoryCombo {
+    background-color: #FBF8F7;
+    border: 1px solid #BFAFB3;
+    border-radius: 22px;
+    padding: 10px 34px 10px 16px;
+    font-size: 13px;
+    color: #2D1A3E;
+    min-height: 18px;
+    min-width: 130px;
+}
+
+#SearchCategoryCombo:hover {
+    border: 1px solid #3D4BA8;
+}
+
+#SearchCategoryCombo:focus {
+    border: 2px solid #3D4BA8;
+    padding: 9px 33px 9px 15px;
+}
+
+#SearchCategoryCombo::drop-down {
+    border: none;
+    width: 26px;
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+}
+
+#SearchCategoryCombo::down-arrow {
+    image: none;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #4E3C5C;
+    margin-right: 12px;
+}
+
+#SearchCategoryCombo QAbstractItemView {
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-radius: 12px;
+    padding: 6px;
+    outline: none;
+    color: #2D1A3E;
+    selection-background-color: #2D1A3E;
+    selection-color: #F5F0EE;
 }
 
 #SearchBtn {
     background-color: #2D1A3E;
     color: #F5F0EE;
+    border: none;
+    border-radius: 22px;
+    padding: 11px 24px;
+    font-size: 13px;
     font-weight: bold;
-    padding: 11px 22px;
 }
 
 #SearchBtn:hover {
     background-color: #47305C;
 }
 
+#SearchBtn:pressed {
+    background-color: #1A0F26;
+}
+
 #SearchBtn:focus {
     border: 2px solid #F5F0EE;
-    padding: 9px 20px;
+    padding: 9px 22px;
+}
+
+#SearchBtn:disabled {
+    background-color: #E4DAD6;
+    color: #A89AA0;
+}
+
+QListWidget#SearchSuggestions {
+    background-color: #F5F0EE;
+    border: 1px solid #BFAFB3;
+    border-radius: 12px;
+    padding: 6px;
+    outline: none;
+    font-size: 13px;
+    color: #2D1A3E;
+}
+
+QListWidget#SearchSuggestions::item {
+    padding: 8px 12px;
+    border-radius: 8px;
+}
+
+QListWidget#SearchSuggestions::item:hover {
+    background-color: rgba(61, 75, 168, 25);
+}
+
+QListWidget#SearchSuggestions::item:selected {
+    background-color: #2D1A3E;
+    color: #F5F0EE;
 }
 
 /* ==========================================================================
-   HOME SCROLL AREA — wraps hero + features + opportunities on the guest page
+   HOME SCROLL AREA — hero + features + opportunities
    ========================================================================== */
 #HomeScrollArea,
 #HomeScrollArea > QWidget#qt_scrollarea_viewport,
@@ -390,7 +491,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
 }
 
 /* ==========================================================================
-   FEATURES SECTION — 3 cards under the hero
+   FEATURES SECTION
    ========================================================================== */
 #FeaturesSection {
     background-color: #D8CBC7;
@@ -422,7 +523,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
 }
 
 /* ==========================================================================
-   OPPORTUNITIES SECTION — soonest / newest / remote horizontal rows
+   OPPORTUNITIES SECTION — home carousels
    ========================================================================== */
 #OpportunitiesSection {
     background-color: #D8CBC7;
@@ -442,37 +543,6 @@ QScrollBar::add-page, QScrollBar::sub-page {
     border: none;
 }
 
-#OpportunityCard {
-    background-color: #F5F0EE;
-    border: 1px solid #BFAFB3;
-    border-radius: 0px;
-}
-
-#OppBadge {
-    background-color: #3D4BA8;
-    color: #F5F0EE;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 3px 8px;
-    max-width: 90px;
-}
-
-#OppTitle {
-    font-size: 14px;
-    font-weight: bold;
-    color: #2D1A3E;
-}
-
-#OppOrg {
-    font-size: 12px;
-    color: #6B5B77;
-}
-
-#OppMeta {
-    font-size: 12px;
-    color: #4E3C5C;
-}
-
 #OpportunityEmpty {
     color: #6B5B77;
     font-size: 13px;
@@ -481,7 +551,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
 }
 
 /* ==========================================================================
-   FAQ PAGE — LIGHT MODE
+   FAQ PAGE
    ========================================================================== */
 #FAQPage,
 #FAQScrollArea,
@@ -561,7 +631,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
 }
 
 /* ==========================================================================
-   VOLUNTEER PAGE — LIGHT MODE
+   VOLUNTEER PAGE
    ========================================================================== */
 #VolunteerPage,
 #VolunteerScroll,
@@ -575,7 +645,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
 }
 
 #VolunteerHeader {
-    background-color: #c1aea8;
+    background-color: #C1AEA8;
     border-bottom: 1px solid #BFAFB3;
 }
 
@@ -652,9 +722,9 @@ QScrollBar::add-page, QScrollBar::sub-page {
     padding: 8px 20px;
 }
 
-/* ---- Filter bar ---- */
+/* ── Filter bar ────────────────────────────────────────────────── */
 #FilterBar {
-    background-color: #cbb9b4;
+    background-color: #CBB9B4;
     border-bottom: 1px solid #BFAFB3;
 }
 
@@ -717,12 +787,13 @@ QScrollBar::add-page, QScrollBar::sub-page {
     padding: 7px 13px;
 }
 
-/* ---- Event Card (grid + list) ---- */
-/* ---- Event Card (grid + list) ---- */
+/* ==========================================================================
+   EVENT CARD (grid + list)
+   ========================================================================== */
 #EventCard {
     background-color: #FFFFFF;
     border: 1px solid #D8DCE3;
-    border-radius: 14px;
+    border-radius: 0px;
 }
 #EventCard:hover {
     border: 1px solid #B1A2A8;
@@ -731,7 +802,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
 #EventCardMoxie {
     background-color: #FFFFFF;
     border: 2px solid #B1A2A8;
-    border-radius: 14px;
+    border-radius: 0px;
 }
 #EventCardMoxie:hover {
     border: 2px solid #8A7A82;
@@ -743,6 +814,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
     color: #7A6F73;
     font-size: 12px;
 }
+
 #EventCategoryBadge {
     background-color: #3D4BA8;
     color: #F5F0EE;
@@ -803,7 +875,6 @@ QScrollBar::add-page, QScrollBar::sub-page {
     font-weight: bold;
 }
 
-/* Secondary action: Open link (purple) */
 #EventLinkBtn {
     background-color: #2D1A3E;
     color: #F5F0EE;
@@ -824,7 +895,6 @@ QScrollBar::add-page, QScrollBar::sub-page {
     padding: 7px 12px;
 }
 
-/* Primary action: RSVP (Blueberry) */
 #EventRsvpBtn {
     background-color: #3D4BA8;
     color: #F5F0EE;
@@ -845,7 +915,7 @@ QScrollBar::add-page, QScrollBar::sub-page {
     padding: 7px 12px;
 }
 
-/* ---- Event details dialog ---- */
+/* ── Event details dialog ─────────────────────────────────────── */
 #EventDetailsDialog {
     background-color: #F5F0EE;
     border: 1px solid #BFAFB3;
@@ -863,4 +933,28 @@ QScrollBar::add-page, QScrollBar::sub-page {
 #DetailsDescription {
     font-size: 13px;
     color: #4E3C5C;
+}
+
+/* ==========================================================================
+   GLOBAL MICROPHONE BUTTON
+   ========================================================================== */
+QPushButton#GlobalMic {
+    background: #2D1A3E;
+    color: white;
+    border: none;
+    border-radius: 22px;
+    font-size: 18px;
+}
+
+QPushButton#GlobalMic:hover {
+    background: #47305C;
+}
+
+QPushButton#GlobalMic:pressed {
+    background: #1A0F26;
+}
+
+QPushButton#GlobalMic[listening="true"] {
+    background: #C0392B;
+    font-size: 20px;
 }

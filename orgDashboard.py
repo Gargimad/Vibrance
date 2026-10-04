@@ -1,16 +1,18 @@
 """
-orgDashboard.py — Organization dashboard.
+orgDashboard.py - Organization dashboard.
 
-Four views in a QStackedWidget:
-    0  Overview       stats, next up, recent activity
-    1  List           the org's own opportunities
-    2  Form           create or edit an opportunity  (NOT in the nav)
-    3  Announcements  post + manage announcements
+Five views in a QStackedWidget:
+    0  Overview         stats, next up, recent activity, needs attention
+    1  List             the org's own opportunities
+    2  Form             create or edit an opportunity (NOT in the nav)
+    3  Announcements    post + manage announcements
+    4  Volunteers       roster with notes, tags, ban/unban
+    5  Reports          hours by volunteer / opportunity, CSV export
 
-landing.py builds the nav bar from TAB_LABELS. Because the form page is
-not a nav destination, TAB_LABELS and the stack indices are not the same
-list — NAV_TO_STACK bridges them. landing.py should call show_nav_tab(i)
-for nav clicks and current_nav_tab() for highlighting.
+landing.py builds the nav bar from TAB_LABELS. Because the form page
+is not a nav destination, TAB_LABELS and the stack indices are not the
+same list - NAV_TO_STACK bridges them. landing.py should call
+show_nav_tab(i) for nav clicks and current_nav_tab() for highlighting.
 """
 
 from PyQt6.QtCore import Qt, QDate
@@ -21,22 +23,34 @@ from PyQt6.QtWidgets import (
     QListWidgetItem, QMessageBox, QFrame, QScrollArea, QGridLayout,
     QStackedWidget, QFileDialog, QDialog,
 )
-
+from dateFormat import format_date, format_range, format_event_when
 import theme
 from eventCard import clear_thumbnail_cache
 
 
 TAB_OVERVIEW, TAB_LIST, TAB_FORM, TAB_ANNOUNCEMENTS = 0, 1, 2, 3
+TAB_VOLUNTEERS, TAB_REPORTS = 4, 5
 
 
 class OrgDashboard(QWidget):
-    TAB_LABELS = ["Overview", "My opportunities", "Announcements"]
+    TAB_LABELS = [
+        "Overview",
+        "My opportunities",
+        "Volunteers",
+        "Reports",
+        "Announcements",
+    ]
 
     # Which stack index each nav button goes to.
-    # nav 0 → stack 0 (Overview)
-    # nav 1 → stack 1 (List)
-    # nav 2 → stack 3 (Announcements)  ← skips the form page (stack 2)
-    NAV_TO_STACK = [TAB_OVERVIEW, TAB_LIST, TAB_ANNOUNCEMENTS]
+    #   nav 0 -> stack 0 (Overview)
+    #   nav 1 -> stack 1 (List)
+    #   nav 2 -> stack 4 (Volunteers)
+    #   nav 3 -> stack 5 (Reports)
+    #   nav 4 -> stack 3 (Announcements)  -- skips the form page (stack 2)
+    NAV_TO_STACK = [
+        TAB_OVERVIEW, TAB_LIST, TAB_VOLUNTEERS, TAB_REPORTS,
+        TAB_ANNOUNCEMENTS,
+    ]
 
     def __init__(self, db, on_logout_click=None, on_back_click=None,
                  parent=None):
@@ -58,18 +72,29 @@ class OrgDashboard(QWidget):
         self.stack.addWidget(self._build_list_page())           # 1
         self.stack.addWidget(self._build_form_page())           # 2
         self.stack.addWidget(self._build_announcements_page())  # 3
+
+        # ── Volunteer management pages ─────────────────────────────
+        from orgVolunteersPage import OrgVolunteersPage
+        from orgReportsPage import OrgReportsPage
+        self.volunteersPage = OrgVolunteersPage(self.db)
+        self.reportsPage = OrgReportsPage(self.db)
+        self.stack.addWidget(self.volunteersPage)               # 4
+        self.stack.addWidget(self.reportsPage)                  # 5
+
         outer.addWidget(self.stack, 1)
 
-    # ── Lifecycle ─────────────────────────────────────────────────────────
+    # ── Lifecycle ──────────────────────────────────────────────────
     def set_org_data(self, org_data):
         self.org = org_data
+        self.volunteersPage.set_org(org_data)
+        self.reportsPage.set_org(org_data)
         self.show_tab(TAB_OVERVIEW)
 
     def current_tab(self):
         return self.stack.currentIndex()
 
     def show_tab(self, idx):
-        """Directly show a stack page. `idx` is a stack index."""
+        """Directly show a stack page. 'idx' is a stack index."""
         if idx < 0 or idx >= self.stack.count():
             return
         self.stack.setCurrentIndex(idx)
@@ -79,10 +104,14 @@ class OrgDashboard(QWidget):
             self._refresh_list()
         elif idx == TAB_ANNOUNCEMENTS:
             self._refresh_announcements()
+        elif idx == TAB_VOLUNTEERS:
+            self.volunteersPage.refresh()
+        elif idx == TAB_REPORTS:
+            self.reportsPage.refresh()
 
     def show_nav_tab(self, nav_idx):
         """
-        Called by landing.py's nav bar. `nav_idx` is a position in
+        Called by landing.py's nav bar. 'nav_idx' is a position in
         TAB_LABELS (0..len-1). Translated to the right stack page.
         """
         if nav_idx < 0 or nav_idx >= len(self.NAV_TO_STACK):
@@ -91,10 +120,9 @@ class OrgDashboard(QWidget):
 
     def current_nav_tab(self):
         """
-        Inverse of show_nav_tab — used by landing to highlight the
+        Inverse of show_nav_tab - used by landing to highlight the
         active nav button. Returns the TAB_LABELS index of the current
-        page, or -1 if the current page isn't a nav destination
-        (e.g. the form).
+        page, or -1 if the current page isn't a nav destination.
         """
         stack_idx = self.stack.currentIndex()
         try:
@@ -102,7 +130,7 @@ class OrgDashboard(QWidget):
         except ValueError:
             return -1
 
-    # ── 0. Overview page ──────────────────────────────────────────────────
+    # ── 0. Overview page ───────────────────────────────────────────
     def _build_overview_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
@@ -115,6 +143,7 @@ class OrgDashboard(QWidget):
         scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+
         content = QWidget()
         lay = QVBoxLayout(content)
         lay.setContentsMargins(40, 20, 40, 20)
@@ -128,9 +157,10 @@ class OrgDashboard(QWidget):
         lay.addWidget(self.org_title)
         lay.addWidget(self.org_subtitle)
 
+        # ── Stat tiles ─────────────────────────────────────────────
         tiles = QHBoxLayout()
         tiles.setSpacing(10)
-        self.tile_values = {}
+        self.title_values = {}
         for key, caption in [
             ("open", "Open opportunities"),
             ("total", "Total posted"),
@@ -144,17 +174,24 @@ class OrgDashboard(QWidget):
             tl = QVBoxLayout(tile)
             tl.setContentsMargins(14, 12, 14, 12)
             tl.setSpacing(2)
-            val = QLabel("–")
+            val = QLabel("-")
             val.setStyleSheet("font-size: 26px; font-weight: bold;")
             cap = QLabel(caption)
             cap.setObjectName(theme.EVENT_META_VALUE)
             cap.setWordWrap(True)
             tl.addWidget(val)
             tl.addWidget(cap)
-            self.tile_values[key] = val
+            self.title_values[key] = val
             tiles.addWidget(tile, 1)
         lay.addLayout(tiles)
 
+        # ── Needs attention ────────────────────────────────────────
+        card_attn, self.overview_attention = self._dash_card(
+            "Needs attention", "Reports", TAB_REPORTS
+        )
+        lay.addWidget(card_attn)
+
+        # ── Two-column grid ────────────────────────────────────────
         grid = QGridLayout()
         grid.setSpacing(16)
         grid.setColumnStretch(0, 1)
@@ -171,12 +208,13 @@ class OrgDashboard(QWidget):
         grid.addWidget(card_act, 0, 1)
         lay.addLayout(grid)
 
-        # Quick actions
+        # ── Quick actions ──────────────────────────────────────────
         actions_card = QFrame()
         actions_card.setObjectName(theme.EVENT_CARD)
         al = QHBoxLayout(actions_card)
         al.setContentsMargins(16, 12, 16, 12)
         al.setSpacing(8)
+
         amsg = QLabel("Ready to post something new?")
         amsg.setObjectName(theme.EVENT_META_VALUE)
         al.addWidget(amsg, 1)
@@ -190,13 +228,12 @@ class OrgDashboard(QWidget):
         ann_btn = QPushButton("Post announcement")
         ann_btn.setObjectName(theme.SECONDARY_BTN)
         ann_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        ann_btn.clicked.connect(
-            lambda: self.show_tab(TAB_ANNOUNCEMENTS)
-        )
+        ann_btn.clicked.connect(lambda: self.show_tab(TAB_ANNOUNCEMENTS))
         al.addWidget(ann_btn)
 
         lay.addWidget(actions_card)
         lay.addStretch(1)
+
         scroll.setWidget(content)
         outer.addWidget(scroll)
         return page
@@ -213,6 +250,7 @@ class OrgDashboard(QWidget):
         t.setObjectName(theme.EVENT_TITLE_LIST)
         head.addWidget(t)
         head.addStretch(1)
+
         if tab is not None:
             b = QPushButton(f"{link_text} →")
             b.setFlat(True)
@@ -221,12 +259,9 @@ class OrgDashboard(QWidget):
                 "QPushButton { border: none; color: #2E86DE; }"
                 "QPushButton:hover { text-decoration: underline; }"
             )
-            # `tab` here is a nav index, so use show_nav_tab.
-            b.clicked.connect(lambda _, i=tab: self.show_nav_tab(
-                OrgDashboard.NAV_TO_STACK.index(tab)
-                if tab in OrgDashboard.NAV_TO_STACK else 0
-            ) if False else self.show_tab(tab))
+            b.clicked.connect(lambda _, i=tab: self.show_tab(i))
             head.addWidget(b)
+
         v.addLayout(head)
 
         body = QVBoxLayout()
@@ -270,15 +305,20 @@ class OrgDashboard(QWidget):
         if not self.org:
             return
 
-        self.org_title.setText(self.org.get("org_name", "Organization"))
+        self.org_title.setText(
+            self.org.get("org_name", "Organization")
+        )
         self.org_subtitle.setText(
-            self.org.get("description", "") or "Manage your opportunities"
+            self.org.get("description", "")
+            or "Manage your opportunities"
         )
 
-        for lay in (self.overview_next, self.overview_activity):
+        for lay in (self.overview_attention, self.overview_next,
+                    self.overview_activity):
             self._clear_all(lay)
 
-        stats = self._db_call("getOrgStats", self.org["orgID"], default={}) or {}
+        stats = self._db_call("getOrgStats", self.org["orgID"],
+                              default={}) or {}
         open_count = stats.get("open_opportunities", 0)
         total = stats.get("total_opportunities", 0)
         signups = stats.get("total_signups", 0)
@@ -290,13 +330,48 @@ class OrgDashboard(QWidget):
         ) or []
         ann_count = len(anns)
 
-        self.tile_values["open"].setText(str(open_count))
-        self.tile_values["total"].setText(str(total))
-        self.tile_values["signups"].setText(str(signups))
-        self.tile_values["volunteers"].setText(str(volunteers))
-        self.tile_values["hours"].setText(f"{hours:.1f}")
-        self.tile_values["announce"].setText(str(ann_count))
+        self.title_values["open"].setText(str(open_count))
+        self.title_values["total"].setText(str(total))
+        self.title_values["signups"].setText(str(signups))
+        self.title_values["volunteers"].setText(str(volunteers))
+        self.title_values["hours"].setText(f"{hours:.1f}")
+        self.title_values["announce"].setText(str(ann_count))
 
+        # ── Needs attention ────────────────────────────────────────
+        report_rows = self._db_call(
+            "getOrgHoursReport", self.org["orgID"],
+            None, None, None, None, default=[],
+        ) or []
+        pending_count = sum(
+            1 for r in report_rows
+            if not r["verified"] and not r["no_show"]
+        )
+        if pending_count:
+            self.overview_attention.addWidget(self._overview_row(
+                f"{pending_count} hour entr"
+                f"{'y' if pending_count == 1 else 'ies'} "
+                f"waiting to be verified",
+                "Open Reports to review and approve.",
+            ))
+
+        upcoming_for_attn = self._db_call(
+            "getUpcomingForOrg", self.org["orgID"], default=[]
+        ) or []
+        for r in upcoming_for_attn:
+            cap = r["capacity"]
+            reg = r["registered_count"] or 0
+            if cap and reg < cap * 0.5:
+                self.overview_attention.addWidget(self._overview_row(
+                    f"{r['title']} is under 50% full",
+                    f"{reg}/{cap} signed up — consider sharing it.",
+                ))
+
+        if self.overview_attention.count() == 0:
+            self.overview_attention.addWidget(self._overview_text(
+                "Nothing needs your attention right now. 🎉"
+            ))
+
+        # ── Next up ────────────────────────────────────────────────
         upcoming = self._db_call(
             "getUpcomingForOrg", self.org["orgID"], default=[]
         ) or []
@@ -306,20 +381,19 @@ class OrgDashboard(QWidget):
             ))
         for r in upcoming[:4]:
             title = r["title"] or "Untitled"
-            date_txt = r["event_date"] or "TBD"
-            end = r["event_end_date"] or ""
-            if end and end != date_txt:
-                date_txt = f"{date_txt} → {end}"
+            date_txt = format_event_when(r)
             cap = r["capacity"]
             reg = r["registered_count"] or 0
             if cap:
-                spots = f"{reg}/{cap} signed up · {max(0, cap - reg)} spots left"
+                spots = (f"{reg}/{cap} signed up — "
+                         f"{max(0, cap - reg)} spots left")
             else:
                 spots = f"{reg} signed up"
             self.overview_next.addWidget(self._overview_row(
                 title, f"{date_txt} · {spots}"
             ))
 
+        # ── Recent activity ────────────────────────────────────────
         recent = self._db_call(
             "getRecentSignupsForOrg", self.org["orgID"], default=[]
         ) or []
@@ -337,7 +411,7 @@ class OrgDashboard(QWidget):
                 str(r["signup_time"] or "")[:19],
             ))
 
-    # ── 1. List page ──────────────────────────────────────────────────────
+    # ── 1. List page ───────────────────────────────────────────────
     def _build_list_page(self):
         page = QWidget()
         lay = QVBoxLayout(page)
@@ -395,10 +469,10 @@ class OrgDashboard(QWidget):
         except Exception as e:
             print("Org opportunities query failed:", e)
             return
-
         if not rows:
             item = QListWidgetItem(
-                "No opportunities yet — click “+ New opportunity” to create one."
+                "No opportunities yet — click \"+ New opportunity\" "
+                "to create one."
             )
             item.setFlags(Qt.ItemFlag.NoItemFlags)
             self.list_widget.addItem(item)
@@ -409,15 +483,15 @@ class OrgDashboard(QWidget):
             reg = r["registered_count"] or 0
             spots = f" · {reg}/{cap}" if cap else f" · {reg} signed up"
             label = (
-                f"{r['title']}  ·  {r['event_date'] or 'TBD'}"
-                f"  ·  {r['status'] or 'open'}  ·  "
-                f"{r['category'] or 'uncategorized'}{spots}"
+                f"{r['title']} · {format_date(r['event_date'])}"
+                f" · {r['status'] or 'open'}"
+                f" · {r['category'] or 'uncategorized'}{spots}"
             )
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, r["opportunityID"])
             self.list_widget.addItem(item)
 
-    # ── 2. Form page ──────────────────────────────────────────────────────
+    # ── 2. Form page ───────────────────────────────────────────────
     def _build_form_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
@@ -480,10 +554,14 @@ class OrgDashboard(QWidget):
         self.f_capacity.setSpecialValueText("Unlimited")
 
         self.f_status = QComboBox()
-        self.f_status.addItems(["open", "full", "cancelled", "completed"])
+        self.f_status.addItems(
+            ["open", "full", "cancelled", "completed"]
+        )
 
         self.f_skills = QLineEdit()
-        self.f_skills.setPlaceholderText("Comma-separated (optional)")
+        self.f_skills.setPlaceholderText(
+            "Comma-separated (optional)"
+        )
 
         self.f_contact_name = QLineEdit()
         self.f_contact_name.setPlaceholderText("Contact name")
@@ -617,11 +695,13 @@ class OrgDashboard(QWidget):
         self.f_address.setText(row["address"] or "")
         self.f_remote.setChecked(bool(row["is_remote"]))
         if row["event_date"]:
-            d = QDate.fromString(str(row["event_date"])[:10], "yyyy-MM-dd")
+            d = QDate.fromString(str(row["event_date"])[:10],
+                                 "yyyy-MM-dd")
             if d.isValid():
                 self.f_date.setDate(d)
         if row["event_end_date"]:
-            d = QDate.fromString(str(row["event_end_date"])[:10], "yyyy-MM-dd")
+            d = QDate.fromString(str(row["event_end_date"])[:10],
+                                 "yyyy-MM-dd")
             if d.isValid():
                 self.f_end_date.setDate(d)
         else:
@@ -633,13 +713,15 @@ class OrgDashboard(QWidget):
         self.f_skills.setText(row["required_skills"] or "")
         self.f_contact_name.setText(row["contact_name"] or "")
         self.f_contact_email.setText(row["contact_email"] or "")
-        self.thumb_lbl.setText(self._pending_thumbnail or "No image attached")
+        self.thumb_lbl.setText(
+            self._pending_thumbnail or "No image attached"
+        )
         self.show_tab(TAB_FORM)
 
     def _pick_thumbnail(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Choose thumbnail",
-            "", "Images (*.png *.jpg *.jpeg *.webp *.bmp)"
+            self, "Choose thumbnail", "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)"
         )
         if path:
             self._pending_thumbnail = path
@@ -668,7 +750,6 @@ class OrgDashboard(QWidget):
         except Exception as e:
             print("getSignupsForOpportunity failed:", e)
             signups = []
-
         row = self.db.getOpportunityByID(oid)
         title = row["title"] if row else "an event"
 
@@ -680,7 +761,7 @@ class OrgDashboard(QWidget):
             try:
                 self.db.addNotification(
                     s["userID"],
-                    f"{title} has been cancelled by the organizer.",
+                    f"{title} has been cancelled by the organization.",
                     "opportunity_cancelled",
                     oid,
                 )
@@ -700,14 +781,15 @@ class OrgDashboard(QWidget):
         oid = item.data(Qt.ItemDataRole.UserRole)
         if not oid:
             return
-        try:
-            rows = self.db.getSignupsForOpportunity(oid)
-        except Exception as e:
-            QMessageBox.warning(self, "Signups", str(e))
-            return
         row = self.db.getOpportunityByID(oid)
-        title = row["title"] if row else "Opportunity"
-        SignupsDialog(self, title, rows).exec()
+        if not row:
+            QMessageBox.warning(self, "Not found",
+                                "That opportunity no longer exists.")
+            self._refresh_list()
+            return
+        from attendanceDialog import AttendanceDialog
+        AttendanceDialog(self.db, self.org, row, parent=self).exec()
+        self._refresh_list()
 
     def _save(self):
         if not self.org:
@@ -715,7 +797,8 @@ class OrgDashboard(QWidget):
 
         title = self.f_title.text().strip()
         if not title:
-            QMessageBox.warning(self, "Missing title", "Title is required.")
+            QMessageBox.warning(self, "Missing title",
+                                "Title is required.")
             return
 
         start_date = self.f_date.date()
@@ -785,7 +868,7 @@ class OrgDashboard(QWidget):
         self._refresh_list()
         self.show_tab(TAB_LIST)
 
-    # ── 3. Announcements page ─────────────────────────────────────────────
+    # ── 3. Announcements page ──────────────────────────────────────
     def _build_announcements_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
@@ -796,7 +879,7 @@ class OrgDashboard(QWidget):
         heading.setObjectName(theme.SECTION_TITLE)
 
         sub = QLabel(
-            "Announcements go to everyone who follows your organization — "
+            "Announcements go to everyone who follows your org — "
             "members and volunteers who've signed up for your events. "
             "They'll show up in their notifications tab."
         )
@@ -859,8 +942,8 @@ class OrgDashboard(QWidget):
         self.ann_layout.setSpacing(10)
         self.ann_layout.addStretch(1)
         self.ann_scroll.setWidget(content)
-        outer.addWidget(self.ann_scroll, 1)
 
+        outer.addWidget(self.ann_scroll, 1)
         return page
 
     def _refresh_announcements(self):
@@ -873,7 +956,7 @@ class OrgDashboard(QWidget):
 
         if not rows:
             self.ann_layout.insertWidget(0, self._overview_text(
-                "No announcements yet. Post one above to reach your "
+                "No announcements yet. Post one above to reach "
                 "volunteers."
             ))
             return
@@ -894,6 +977,7 @@ class OrgDashboard(QWidget):
                 pin.setObjectName(theme.EVENT_STATUS_BADGE)
                 header.addWidget(pin)
             header.addStretch(1)
+
             ts = QLabel(str(r["created_at"] or "")[:19])
             ts.setObjectName(theme.EVENT_META_VALUE)
             header.addWidget(ts)
@@ -920,12 +1004,15 @@ class OrgDashboard(QWidget):
             del_btn.setObjectName(theme.SECONDARY_BTN)
             del_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             del_btn.clicked.connect(
-                lambda _, aid=r["announcementID"]: self._delete_announcement(aid)
+                lambda _, aid=r["announcementID"]:
+                    self._delete_announcement(aid)
             )
             row.addWidget(del_btn)
 
             v.addLayout(row)
-            self.ann_layout.insertWidget(self.ann_layout.count() - 1, card)
+            self.ann_layout.insertWidget(
+                self.ann_layout.count() - 1, card
+            )
 
     def _post_announcement(self):
         if not self.org:
@@ -956,8 +1043,7 @@ class OrgDashboard(QWidget):
         self.ann_body.clear()
         self.ann_pinned.setChecked(False)
         QMessageBox.information(
-            self, "Posted",
-            "Your volunteers have been notified."
+            self, "Posted", "Your volunteers have been notified."
         )
         self._refresh_announcements()
 
@@ -974,7 +1060,7 @@ class OrgDashboard(QWidget):
         self._db_call("deleteAnnouncement", announcementID)
         self._refresh_announcements()
 
-    # ── Small wrapper matching volunteerHome._db ──────────────────────────
+    # ── Small wrapper matching volunteerHome._db ────────────────────
     def _db_call(self, method, *args, default=None):
         fn = getattr(self.db, method, None) if self.db else None
         if fn is None:
@@ -985,71 +1071,3 @@ class OrgDashboard(QWidget):
         except Exception as e:
             print(f"Database.{method}() failed:", e)
             return default
-
-
-# ── Signups dialog ────────────────────────────────────────────────────────
-class SignupsDialog(QDialog):
-    def __init__(self, parent, title, rows):
-        super().__init__(parent)
-        self.setObjectName(theme.EVENT_DETAILS_DIALOG)
-        self.setWindowTitle(f"Signups — {title}")
-        self.setModal(True)
-        self.setMinimumWidth(520)
-        self.setMinimumHeight(360)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(10)
-
-        heading = QLabel(title)
-        heading.setObjectName(theme.EVENT_TITLE_LIST)
-        heading.setWordWrap(True)
-        layout.addWidget(heading)
-
-        subtitle = QLabel(f"{len(rows)} registered")
-        subtitle.setObjectName(theme.EVENT_META_VALUE)
-        layout.addWidget(subtitle)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setObjectName(theme.DETAILS_SCROLL)
-
-        content = QWidget()
-        cl = QVBoxLayout(content)
-        cl.setContentsMargins(0, 6, 0, 0)
-        cl.setSpacing(8)
-
-        if not rows:
-            empty = QLabel("No one has signed up yet.")
-            empty.setObjectName(theme.VOLUNTEER_EMPTY)
-            cl.addWidget(empty)
-        else:
-            for r in rows:
-                name = " ".join(
-                    x for x in [r["first_name"], r["last_name"]] if x
-                ) or "(no name)"
-                email = r["email"] or ""
-                status = r["status"] or "registered"
-                line = QLabel(
-                    f"<b>{name}</b> · <span style='color:#888'>{email}</span>"
-                    f"<br><span style='color:#888'>status: {status} · "
-                    f"{(r['signup_time'] or '')[:19]}</span>"
-                )
-                line.setObjectName(theme.EVENT_META_VALUE)
-                line.setWordWrap(True)
-                line.setTextFormat(Qt.TextFormat.RichText)
-                cl.addWidget(line)
-
-        cl.addStretch(1)
-        scroll.setWidget(content)
-        layout.addWidget(scroll, 1)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch(1)
-        close = QPushButton("Close")
-        close.setObjectName(theme.DETAILS_CLOSE_BTN)
-        close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        close.clicked.connect(self.reject)
-        btn_row.addWidget(close)
-        layout.addLayout(btn_row)
