@@ -1125,3 +1125,23 @@ QListWidget#ChatHistoryList {
 QLabel#ChatHistoryEmpty {
     color: #C7B9D4;
 }
+/* ── Opportunity source badges ───────────────────────────────── */
+QLabel#EventSourceMoxie {
+    background-color: #2D1A3E;
+    color: #F5F0EE;
+    border-radius: 9px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+QLabel#EventSourceExternal {
+    background-color: transparent;
+    color: #8C8C8C;
+    border: 1px solid #8C8C8C;
+    border-radius: 9px;
+    padding: 2px 9px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}

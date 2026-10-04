@@ -303,6 +303,20 @@ class VolunteerPage(QWidget):
     # ── Card events ───────────────────────────────────────────────────────
     def _show_details(self, card):
         EventDetailsDialog(card, self).exec()
+    def apply_external_filters(self, filters: dict):
+        """Called by landing when the guest home SearchBar fires.
+        Forward into the FilterBar widgets so their UI reflects the query."""
+        fb = self.filter_bar
+        fb.set_search_text(filters.get("keyword", ""))
+        fb.set_type_filter(filters.get("type", "All"))
+        if filters.get("location"):
+            fb.location_input.setText(filters["location"])
+        if filters.get("category") and filters["category"] != "All Causes":
+            idx = fb.category_combo.findText(filters["category"])
+            if idx >= 0:
+                fb.category_combo.setCurrentIndex(idx)
+        # trigger a refresh through the normal emit path
+        fb._emit()
 
     def _handle_rsvp(self, opportunity_id):
         if not self.current_volunteer_id:

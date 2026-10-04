@@ -213,7 +213,7 @@ class EventCard(QFrame):
 
     GRID_WIDTH = 300
     GRID_THUMB_H = 150
-    GRID_FIXED_HEIGHT = 465
+    GRID_FIXED_HEIGHT = 480
     LIST_THUMB_W = 220
     LIST_THUMB_H = 160
     LIST_MIN_HEIGHT = 160
@@ -308,10 +308,27 @@ class EventCard(QFrame):
 
         return wrap
 
+    def _make_source_badge(self):
+        """Small pill that clearly says where the opportunity came from."""
+        label = QLabel("Moxie" if self.is_moxie_org else "External")
+        label.setObjectName(
+            theme.EVENT_SOURCE_MOXIE if self.is_moxie_org
+            else theme.EVENT_SOURCE_EXTERNAL
+        )
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setToolTip(
+            "Posted by a Moxie-registered organization"
+            if self.is_moxie_org
+            else "Imported from an external source"
+        )
+        return label
+
+
     def _make_badges(self, with_org=False):
         row = QHBoxLayout()
         row.setSpacing(6)
         row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self._make_source_badge())          # NEW – always first
         for lbl in build_badges(self.category, self.is_remote,
                                 self.location, self.status):
             row.addWidget(lbl)

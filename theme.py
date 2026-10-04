@@ -69,6 +69,8 @@ REGISTER_SCROLL_CONTENT = "RegisterScrollContent"
 
 # Event cards
 EVENT_CARD           = "EventCard"
+EVENT_SOURCE_MOXIE = "EventSourceMoxie"
+EVENT_SOURCE_EXTERNAL = "EventSourceExternal"
 EVENT_THUMB          = "EventThumb"
 EVENT_TITLE          = "EventTitle"
 EVENT_TITLE_LIST     = "EventTitleList"

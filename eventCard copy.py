@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
     QWidget,
 )
-
+from dateFormat import format_event_when
 import theme
 
 FALLBACK_IMAGE = theme.asset("noThumbnail.png")
@@ -354,21 +354,18 @@ class EventCard(QFrame):
         return btn
 
     def _date_text(self):
-        start = self.event_date or "TBD"
-        end = self.event_end_date or ""
-        text = start
-        if end and end != start:
-            text = f"{start} → {end}"
-        if self.start_time and self.end_time:
-            text += f" · {self.start_time}–{self.end_time}"
-        elif self.start_time:
-            text += f" · {self.start_time}"
-        return text
+        return format_event_when(self.row)
 
     def _spots_text(self):
         if not self.capacity:
             return ""
         left = max(0, self.capacity - self.registered_count)
+        if left == 0:
+            return "Full"
+        if left == 1:
+            return "1 spot left"
+        if left <= 3:
+            return f"Only {left} spots left"
         return f"{left} of {self.capacity} left"
 
     def _make_date_line(self):

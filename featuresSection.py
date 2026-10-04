@@ -1,49 +1,102 @@
 """
-featuresSection.py — The three-card "what Moxie offers" section on the
-guest home page.
+featuresSection.py - The three-card "what Moxie offers" section.
 
-Each FeatureCard is an image + title + description tile with a fixed
-width and cover-cropped image. Paths resolve through theme.asset() so
-moving assets/ around is a one-line change.
+Each FeatureCard is an image + title + description tile that:
+  * expands to share the row evenly with its siblings (so full-screen
+    doesn't leave big empty gutters), and
+  * emits `clicked` when the user releases the left mouse button inside
+    it, so the parent section can route to the right page.
+
+Image paths resolve through theme.asset() so moving assets/ around is a
+one-line change.
 """
 
 import os
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPixmap, QCursor
 from PyQt6.QtWidgets import (
-    QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel,
+    QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
 )
 
 import theme
 
 
-class FeatureCard(QFrame):
-    """A single feature tile: image on top, title + description below."""
+class _FeatureImage(QLabel):
+    """Cover-cropped image that rescales with the card.
 
-    CARD_WIDTH = 280
-    IMAGE_HEIGHT = 160
+    Scales the source pixmap with KeepAspectRatioByExpanding and centers
+    the crop, so the image always fills the label edge-to-edge without
+    distortion, at any card size.
+    """
+
+    def __init__(self, path: str, parent=None):
+        super().__init__(parent)
+        self._source = QPixmap(path) if path else QPixmap()
+        self.setMinimumHeight(150)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Expanding)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet("padding: 0; border: none;")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._rescale()
+
+    def _rescale(self):
+        w, h = self.width(), self.height()
+        if w <= 0 or h <= 0:
+            return
+        if self._source.isNull():
+            self.setText("[ image ]")
+            return
+        scaled = self._source.scaled(
+            w, h,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        x = (scaled.width() - w) // 2
+        y = (scaled.height() - h) // 2
+        self.setPixmap(scaled.copy(x, y, w, h))
+
+
+class FeatureCard(QFrame):
+    """A single feature tile: image on top, title + description below.
+
+    Emits `clicked` when the user releases the left mouse button inside
+    the card. The parent section routes each card to the right page.
+    """
+
+    clicked = pyqtSignal()
+
+    MIN_WIDTH = 260
+    MIN_HEIGHT = 320
 
     def __init__(self, image_filename, title, description, parent=None):
         super().__init__(parent)
         self.setObjectName(theme.FEATURE_CARD)
-        self.setFixedWidth(self.CARD_WIDTH)
+        self.setMinimumWidth(self.MIN_WIDTH)
+        self.setMinimumHeight(self.MIN_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Preferred)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # ── Image (flush with the card edges) ─────────────────────────────
-        self.imageLabel = QLabel()
-        self.imageLabel.setObjectName(theme.FEATURE_IMAGE)
-        self.imageLabel.setFixedSize(self.CARD_WIDTH, self.IMAGE_HEIGHT)
-        self.imageLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.imageLabel.setStyleSheet("padding: 0; border: none;")
+        # ── Image (fills the card width, grows in full-screen) ────────
+        path = (image_filename if os.path.isabs(image_filename)
+                else theme.asset(image_filename))
+        if not os.path.exists(path):
+            path = theme.asset("noThumbnail.png")
+        self.image = _FeatureImage(path, self)
+        layout.addWidget(self.image, 1)
 
-        # ── Text block (padded) ───────────────────────────────────────────
+        # ── Text block ───────────────────────────────────────────────
         text_wrap = QVBoxLayout()
-        text_wrap.setContentsMargins(24, 16, 24, 24)
-        text_wrap.setSpacing(10)
+        text_wrap.setContentsMargins(22, 16, 22, 22)
+        text_wrap.setSpacing(8)
 
         self.titleLabel = QLabel(title)
         self.titleLabel.setObjectName(theme.FEATURE_TITLE)
@@ -56,54 +109,26 @@ class FeatureCard(QFrame):
         text_wrap.addWidget(self.titleLabel)
         text_wrap.addWidget(self.desLabel)
         text_wrap.addStretch(1)
-
-        layout.addWidget(self.imageLabel)
         layout.addLayout(text_wrap)
 
-        self.set_image(image_filename)
-
-    def set_image(self, image_filename):
-        """
-        Load an image, cover-crop to exactly (CARD_WIDTH, IMAGE_HEIGHT).
-        Falls back to noThumbnail.png, then to a text placeholder.
-        """
-        if not image_filename:
-            self._show_fallback()
-            return
-
-        path = (image_filename if os.path.isabs(image_filename)
-                else theme.asset(image_filename))
-        pixmap = QPixmap(path)
-
-        if pixmap.isNull():
-            fallback = QPixmap(theme.asset("noThumbnail.png"))
-            if not fallback.isNull():
-                pixmap = fallback
-
-        if pixmap.isNull():
-            self._show_fallback()
-            return
-
-        w, h = self.imageLabel.width(), self.imageLabel.height()
-        scaled = pixmap.scaled(
-            w, h,
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        x = (scaled.width() - w) // 2
-        y = (scaled.height() - h) // 2
-        self.imageLabel.setPixmap(scaled.copy(x, y, w, h))
-
-    def _show_fallback(self):
-        self.imageLabel.clear()
-        self.imageLabel.setText("[ image ]")
+    def mouseReleaseEvent(self, event):
+        if (event.button() == Qt.MouseButton.LeftButton
+                and self.rect().contains(event.position().toPoint())):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
 
 
 class FeaturesSection(QWidget):
+    """Three-card row on the guest home page.
+
+    Swap the images by changing the filenames below; they resolve against
+    assets/. Each card emits a distinct signal so landing.py can route the
+    user to the right page.
     """
-    Three-card row on the guest home page. Swap the images by changing
-    the filenames below; they resolve against assets/.
-    """
+
+    discoverRequested = pyqtSignal()
+    postRequested = pyqtSignal()
+    manageRequested = pyqtSignal()
 
     CARDS = [
         (
@@ -128,24 +153,37 @@ class FeaturesSection(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName(theme.FEATURES_SECTION)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Preferred)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(40, 50, 40, 50)
-        outer.setSpacing(30)
+        outer.setSpacing(28)
 
         section_title = QLabel("What Moxie Offers")
         section_title.setObjectName(theme.SECTION_TITLE)
         section_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         cards_row = QHBoxLayout()
-        cards_row.setSpacing(24)
-        cards_row.addStretch(1)
+        cards_row.setSpacing(22)
 
-        for filename, title, desc in self.CARDS:
+        # Every card gets a stretch factor of 1 so they share the
+        # available width evenly — this is what makes them grow on
+        # full-screen instead of staying at a fixed width.
+        self.cards = []
+        for idx, (filename, title, desc) in enumerate(self.CARDS):
             card = FeatureCard(filename, title, desc)
-            cards_row.addWidget(card)
-
-        cards_row.addStretch(1)
+            card.clicked.connect(self._emit_for(idx))
+            self.cards.append(card)
+            cards_row.addWidget(card, 1)
 
         outer.addWidget(section_title)
-        outer.addLayout(cards_row)
+        outer.addLayout(cards_row, 1)
+
+    def _emit_for(self, idx):
+        """Return the right signal-emitter for a card index."""
+        if idx == 0:
+            return self.discoverRequested.emit
+        if idx == 1:
+            return self.postRequested.emit
+        return self.manageRequested.emit

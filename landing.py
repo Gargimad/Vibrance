@@ -114,6 +114,10 @@ class Landing(QMainWindow):
         layout.addWidget(self._build_nav(), 0)
 
         self.searchBar = SearchBar()
+        try:
+            self.searchBar.populate_categories(self.db.getDistinctCategories())
+        except Exception as e:
+            print("Could not load categories:", e)
         layout.addWidget(self.searchBar, 0)
 
         self.pageStack = QStackedWidget()
@@ -266,6 +270,11 @@ class Landing(QMainWindow):
 
         layout.addWidget(self._build_hero())
         self.featuresSection = FeaturesSection()
+        self.featuresSection.discoverRequested.connect(
+            lambda: self.show_volunteer_listing_page()
+        )
+        self.featuresSection.postRequested.connect(self.show_org_register_page)
+        self.featuresSection.manageRequested.connect(self.show_org_register_page)
         layout.addWidget(self.featuresSection)
         self.opportunitiesSection = OpportunitiesSection()
         layout.addWidget(self.opportunitiesSection)
@@ -408,11 +417,12 @@ class Landing(QMainWindow):
             if callable(show):
                 show(nav_idx)
 
-    def show_volunteer_listing_page(self, keyword=None):
+    def show_volunteer_listing_page(self, keyword=None, filters=None):
         if keyword:
             self.volunteerListingPage.set_search_text(keyword)
+        if filters:
+            self.volunteerListingPage.apply_external_filters(filters)
         self._goto(self.volunteerListingPage)
-
     def show_volunteer_register_page(self):
         self._goto(self.volunteerRegisterPage)
 
@@ -488,13 +498,12 @@ class Landing(QMainWindow):
             print("Failed to refresh home carousels:", e)
 
     # ── Search ────────────────────────────────────────────────────────────
-    def handle_search(self, keyword, category):
-        if not keyword:
+    def handle_search(self, filters: dict):
+        """SearchBar now emits a full filter dict; forward it to the
+        listing page's FilterBar so its widgets reflect the query."""
+        if not filters:
             return
-        self.show_volunteer_listing_page(keyword=keyword)
-        if category and category != "All":
-            self.volunteerListingPage.set_type_filter(category)
-
+        self.show_volunteer_listing_page(filters=filters)
     def open_external_link(self, url):
         if url:
             webbrowser.open(url)
@@ -518,13 +527,22 @@ class Landing(QMainWindow):
         nav_pixmap = QPixmap(path).scaledToHeight(32, smooth)
         self.nav_logo.setPixmap(nav_pixmap)
 
-        hero_pixmap = QPixmap(path).scaledToHeight(500, smooth)
-        self.hero_logo.setPixmap(hero_pixmap)
+        src = QPixmap(path)
+        target_h = min(500, max(220, int(self.height() * 0.45)))
+        hero_pixmap = src.scaledToHeight(target_h, smooth)
+        if hero_pixmap.width() > self.width() - 80:
+            hero_pixmap = src.scaled(
+                self.width() - 80, target_h,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                smooth,
+            )
+        self.hero_logo.setPixmap(hero_pixmap)    
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "global_mic"):
             self.global_mic.reposition()
             self.global_mic.raise_()
+        self._update_logos()
     # ── Utilities ─────────────────────────────────────────────────────────
     def _app(self):
         from PyQt6.QtWidgets import QApplication

@@ -870,7 +870,9 @@ class Database:
                        AS website_link,
                    org.org_name, org.orgID,
                    CASE WHEN org.userID IS NULL THEN 0 ELSE 1 END
-                       AS is_external,
+                    AS is_moxie_org,
+                    CASE WHEN org.userID IS NULL THEN 1 ELSE 0 END
+                    AS is_external,
                    (SELECT COUNT(*) FROM event_signups s
                     WHERE s.opportunityID = o.opportunityID
                     AND s.status = 'registered') AS registered_count

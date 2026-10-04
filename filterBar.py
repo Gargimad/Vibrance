@@ -220,7 +220,8 @@ class FilterBar(QWidget):
         self.search_input.setText(text)
 
     def set_type_filter(self, value):
-        """Accepts legacy 'Events'/'Organizations' or new 'In-person'/'Remote'."""
+        """Accepts 'In-person', 'Remote', 'All', or legacy
+        'Events'/'Organizations'."""
         legacy = {"Events": "In-person", "Organizations": "All"}
         value = legacy.get(value, value)
         idx = self.type_combo.findText(value)
