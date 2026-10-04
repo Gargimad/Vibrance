@@ -213,7 +213,7 @@ class EventCard(QFrame):
 
     GRID_WIDTH = 300
     GRID_THUMB_H = 150
-    GRID_FIXED_HEIGHT = 480
+    GRID_FIXED_HEIGHT = 510
     LIST_THUMB_W = 220
     LIST_THUMB_H = 160
     LIST_MIN_HEIGHT = 160
@@ -323,12 +323,11 @@ class EventCard(QFrame):
         )
         return label
 
-
     def _make_badges(self, with_org=False):
         row = QHBoxLayout()
         row.setSpacing(6)
         row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self._make_source_badge())          # NEW – always first
+        row.addWidget(self._make_source_badge())
         for lbl in build_badges(self.category, self.is_remote,
                                 self.location, self.status):
             row.addWidget(lbl)
@@ -339,6 +338,7 @@ class EventCard(QFrame):
         row.addStretch(1)
         return row
 
+    # ── buttons ───────────────────────────────────────────────────────────
     def _make_link_button(self):
         btn = QPushButton("Open link" if self.website_link else "No link")
         btn.setObjectName(theme.EVENT_LINK_BTN)
@@ -349,7 +349,10 @@ class EventCard(QFrame):
 
     def _rsvp_label(self):
         if self.status == "open":
-            return "Sign up" if self.is_moxie_org else "RSVP"
+            action = "Sign up" if self.is_moxie_org else "RSVP"
+            if not self.current_volunteer_id:
+                return f"Log In to {action}"
+            return action
         if self.status == "full":
             return "Full"
         return self.status.capitalize()
@@ -360,16 +363,26 @@ class EventCard(QFrame):
         btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         if self.status == "open":
             btn.setEnabled(True)
-            btn.setToolTip(
-                "Sign up for this event" if self.current_volunteer_id
-                else "Log in as a volunteer to sign up"
-            )
+            if self.current_volunteer_id:
+                btn.setToolTip("Sign up for this event")
+            else:
+                btn.setToolTip("Log in as a volunteer to sign up")
         else:
             btn.setEnabled(False)
             btn.setToolTip(f"This event is {self.status}")
         btn.clicked.connect(self.request_rsvp)
         return btn
 
+    def _make_details_button(self):
+        """Full-width 'Open Details' button shown under the action row."""
+        btn = QPushButton("Open Details")
+        btn.setObjectName(theme.EVENT_DETAILS_BTN)
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.setToolTip("See the full event description and metadata")
+        btn.clicked.connect(self.request_details)
+        return btn
+
+    # ── meta rows ─────────────────────────────────────────────────────────
     def _date_text(self):
         return format_event_when(self.row)
 
@@ -440,11 +453,15 @@ class EventCard(QFrame):
         content.addLayout(self._make_date_line())
         content.addStretch(1)
 
+        # Single action row: Open link + RSVP / Sign up
         actions = QHBoxLayout()
         actions.setSpacing(8)
         actions.addWidget(self._make_link_button())
         actions.addWidget(self._make_rsvp_button())
         content.addLayout(actions)
+
+        # Full-width "Open Details" under the action row
+        content.addWidget(self._make_details_button())
 
         layout.addLayout(content)
 
@@ -466,6 +483,7 @@ class EventCard(QFrame):
         content.setContentsMargins(20, 16, 20, 16)
         content.setSpacing(10)
 
+        # Top row: title on the left, link + RSVP on the right
         top = QHBoxLayout()
         top.setSpacing(16)
 
@@ -482,6 +500,10 @@ class EventCard(QFrame):
         top.addLayout(actions)
         content.addLayout(top)
 
+        # Full-width "Open Details" under the top row
+        content.addWidget(self._make_details_button())
+
+        # Badges row (source / category / location / status / org)
         content.addLayout(self._make_badges(with_org=True))
 
         desc_lbl = QLabel(truncate_text(self.description, 260))
@@ -503,6 +525,9 @@ class EventCard(QFrame):
     def request_rsvp(self):
         if self.opportunityID:
             self.rsvpRequested.emit(self.opportunityID)
+
+    def request_details(self):
+        self.detailsRequested.emit(self)
 
     def mouseReleaseEvent(self, event):
         if (event.button() == Qt.MouseButton.LeftButton

@@ -1,16 +1,21 @@
 """
-opportunitiesSection.py — Home-page carousels.
+opportunitiesSection.py - Home-page carousels.
 
 Three horizontally-scrolling rows of EventCards:
-    • Starting Soon     — soonest upcoming, excluding cancelled
-    • Newest Opportunities — most recently posted
-    • Remote Opportunities — is_remote = 1
+  * Starting Soon       - soonest upcoming, excluding cancelled
+  * Newest Opportunities - most recently posted
+  * Remote Opportunities - is_remote = 1
 
 load_from_db(db) fetches from the Database and populates each row.
 Called once at startup and again whenever a new opportunity is posted.
+
+Each card behaves exactly like the ones on the volunteer listing page:
+clicking a card opens the same EventDetailsDialog, "Open link" opens
+the external URL, and "RSVP" bubbles up to landing.py (which decides
+whether the user is logged in).
 """
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
 )
@@ -21,6 +26,10 @@ from eventCard import EventCard
 
 class OpportunityRow(QWidget):
     """A titled, horizontally-scrolling strip of EventCards."""
+
+    detailsRequested = pyqtSignal(object)   # EventCard
+    openLinkRequested = pyqtSignal(str)     # url
+    rsvpRequested = pyqtSignal(int)         # opportunityID
 
     def __init__(self, title, parent=None):
         super().__init__(parent)
@@ -57,7 +66,7 @@ class OpportunityRow(QWidget):
         outer.addWidget(self.scrollArea)
 
         self.emptyLabel = QLabel(
-            "Nothing to show here yet — check back soon!"
+            "Nothing to show here yet - check back soon!"
         )
         self.emptyLabel.setObjectName(theme.OPPORTUNITY_EMPTY)
         self.emptyLabel.setVisible(False)
@@ -84,12 +93,21 @@ class OpportunityRow(QWidget):
                 row, view_mode="grid",
                 current_volunteer_id=current_volunteer_id,
             )
+            # Route every card action through this row's own signals so
+            # the same behaviour is shared with the listing page.
+            card.detailsRequested.connect(self.detailsRequested.emit)
+            card.openLinkRequested.connect(self.openLinkRequested.emit)
+            card.rsvpRequested.connect(self.rsvpRequested.emit)
             self.cardsLayout.addWidget(card)
 
         self.cardsLayout.addStretch(1)
 
 
 class OpportunitiesSection(QWidget):
+    detailsRequested = pyqtSignal(object)
+    openLinkRequested = pyqtSignal(str)
+    rsvpRequested = pyqtSignal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName(theme.OPPORTUNITY_ROW)
@@ -105,6 +123,12 @@ class OpportunitiesSection(QWidget):
         self.soonestRow = OpportunityRow("Starting Soon")
         self.newestRow = OpportunityRow("Newest Opportunities")
         self.remoteRow = OpportunityRow("Remote Opportunities")
+
+        # Bubble each row's signals up so landing.py only connects once.
+        for row in (self.soonestRow, self.newestRow, self.remoteRow):
+            row.detailsRequested.connect(self.detailsRequested.emit)
+            row.openLinkRequested.connect(self.openLinkRequested.emit)
+            row.rsvpRequested.connect(self.rsvpRequested.emit)
 
         layout.addWidget(section_title)
         layout.addWidget(self.soonestRow)
@@ -123,4 +147,6 @@ class OpportunitiesSection(QWidget):
             except Exception as e:
                 print(f"Opportunities query failed: {e}")
                 rows = []
-            row_widget.load(rows, current_volunteer_id=current_volunteer_id)
+            row_widget.load(
+                rows, current_volunteer_id=current_volunteer_id
+            )

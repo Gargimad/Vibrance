@@ -1110,3 +1110,20 @@ QLabel#EventSourceExternal {
     font-weight: 700;
     letter-spacing: 0.5px;
 }
+/* ── Full-width "Open Details" button on event cards ─────────── */
+QPushButton#EventDetailsBtn {
+    background-color: transparent;
+    color: palette(text);
+    border: 1px solid rgba(127, 127, 127, 90);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+QPushButton#EventDetailsBtn:hover {
+    background-color: rgba(127, 127, 127, 30);
+    border-color: rgba(127, 127, 127, 160);
+}
+QPushButton#EventDetailsBtn:pressed {
+    background-color: rgba(127, 127, 127, 60);
+}
