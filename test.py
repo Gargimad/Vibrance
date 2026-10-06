@@ -27,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
-import chatBubble
-from chatBubble import ChatView, DEFAULT_HISTORY_PATH
+import Chatbot.chatBubble as chatBubble
+from Chatbot.chatBubble import ChatView, DEFAULT_HISTORY_PATH
 
 
 def make_echo_view(path):

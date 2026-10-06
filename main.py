@@ -10,10 +10,10 @@ import os
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
-import focusTracker
-import theme
-from landing import Landing
-from focusTracker import FocusTracker
+import Guest.focusTracker as focusTracker
+import Events.theme as theme
+from Guest.landing import Landing
+from Guest.focusTracker import FocusTracker
 
 APP_ID = "Moxie.VolunteerManager.1"
 def _set_windows_app_id():

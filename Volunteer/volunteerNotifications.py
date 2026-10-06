@@ -1,0 +1,290 @@
+"""
+volunteerNotifications.py — Notifications tab for VolunteerHome.
+
+Shows ONE feed made of:
+    * announcements posted by organizations the volunteer follows
+      (Database.getAnnouncementsForVolunteer: orgs they've joined +
+      orgs they've signed up for events with)
+    * the volunteer's own activity notifications (check-in, check-out, ...)
+
+Layout: filter pills (All / Announcements / Activity), then cards grouped
+under "Pinned" and per-day headers. Each card has a coloured left edge
+(the organization's colour for announcements), a title, a timestamp and
+the message body.
+
+How it plugs in (see the instructions that came with this file):
+    class VolunteerHome(NotificationsMixin, QWidget): ...
+and the old _build_notifications_page / _refresh_notifications methods
+in VolunteerHome are deleted so the mixin's versions are used.
+
+The mixin relies on helpers VolunteerHome already has:
+    self._scroll_page, self._clear, self._add, self._empty, self._db
+"""
+
+from datetime import date, datetime, timedelta, timezone
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+)
+
+import Events.theme as theme
+
+
+# Notification type -> (card title, accent colour). Anything not listed
+# falls back to DEFAULT_NOTIF.
+NOTIF_TYPES = {
+    "check_in": ("Checked in", "#27AE60"),
+    "check_out": ("Checked out", "#27AE60"),
+    "cancel": ("Signup cancelled", "#7F8C8D"),
+    "join_org": ("Joined an organization", "#2E86DE"),
+    "leave_org": ("Left an organization", "#7F8C8D"),
+    "opportunity_cancelled": ("Event cancelled", "#C0392B"),
+    "event_reminder": ("Event reminder", "#E67E22"),
+}
+DEFAULT_NOTIF = ("Update", "#7F8C8D")
+
+# Database.addAnnouncement() also writes a notifications row (type
+# 'announcement') for every recipient. Those are skipped here because the
+# real announcement is already shown with its full text.
+DUPLICATE_TYPES = {"announcement"}
+
+FILTERS = (
+    ("all", "All"),
+    ("announcement", "Announcements"),
+    ("activity", "Activity"),
+)
+
+EMPTY_TEXT = {
+    "all": "Nothing here yet. Announcements from your organizations and "
+           "updates about your events will show up here.",
+    "announcement": "No announcements yet from the organizations you follow.",
+    "activity": "No activity yet.",
+}
+
+
+# ── Date helpers ──────────────────────────────────────────────────────────
+def _parse_dt(value):
+    """created_at columns use SQLite's CURRENT_TIMESTAMP, which is UTC.
+    Return it as naive local time so "Today" and the clock are right."""
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        utc = datetime.fromisoformat(s.replace("T", " ")[:19])
+    except ValueError:
+        return None
+    return utc.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+
+
+def _day_label(dt):
+    if dt is None:
+        return "Earlier"
+    today = date.today()
+    d = dt.date()
+    if d == today:
+        return "Today"
+    if d == today - timedelta(days=1):
+        return "Yesterday"
+    label = f"{dt:%B} {dt.day}"
+    return label if d.year == today.year else f"{label}, {d.year}"
+
+
+def _when_label(dt, raw=""):
+    if dt is None:
+        return str(raw or "")[:16]
+    clock = dt.strftime("%I:%M %p").lstrip("0")
+    return f"{_day_label(dt)}, {clock}"
+
+
+# ── Mixin ─────────────────────────────────────────────────────────────────
+class VolunteerNotifications:
+
+    def _build_notifications_page(self):
+        page, self.notif_layout, top = self._scroll_page(
+            "Notifications", spacing=8
+        )
+        self._notif_items = []
+        self._notif_filter = "all"
+        self._notif_btns = {}
+
+        bar = QHBoxLayout()
+        bar.setSpacing(6)
+        group = QButtonGroup(self)
+        group.setExclusive(True)
+        for key, text in FILTERS:
+            btn = QPushButton(text)
+            # Styled by the existing #ViewToggleBtn rule in the stylesheet
+            # (swap in theme.VIEW_TOGGLE_BTN if your theme.py defines it).
+            btn.setObjectName("ViewToggleBtn")
+            btn.setCheckable(True)
+            btn.setChecked(key == "all")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, k=key: self._set_notif_filter(k))
+            group.addButton(btn)
+            bar.addWidget(btn)
+            self._notif_btns[key] = (btn, text)
+        bar.addStretch(1)
+        top.addLayout(bar)
+        return page
+
+    def _set_notif_filter(self, key):
+        self._notif_filter = key
+        self._render_notifications()
+
+    def _refresh_notifications(self):
+        if not (self.db and self.userID):
+            return
+        self._notif_items = self._load_feed_items()
+
+        n_ann = sum(1 for i in self._notif_items if i["kind"] == "announcement")
+        counts = {
+            "all": len(self._notif_items),
+            "announcement": n_ann,
+            "activity": len(self._notif_items) - n_ann,
+        }
+        for key, (btn, text) in self._notif_btns.items():
+            btn.setText(f"{text} ({counts[key]})" if counts[key] else text)
+
+        self._render_notifications()
+
+    # ── Data ──────────────────────────────────────────────────────────
+    def _load_feed_items(self):
+        """Return announcements + activity as one list, newest first."""
+        # Imported here, not at the top, to avoid a circular import
+        # (volunteerHome imports this module).
+        from volunteerHome import org_color, rget
+
+        items = []
+
+        # 1) Announcements from every org the volunteer has joined or
+        #    signed up with (the query lives in db.py).
+        anns = self._db(
+            "getAnnouncementsForVolunteer", self.userID, default=[]
+        ) or []
+        for a in anns:
+            name = str(rget(a, "org_name", "") or "")
+            raw = rget(a, "created_at", "")
+            dt = _parse_dt(raw)
+            items.append({
+                "kind": "announcement",
+                "title": str(rget(a, "title", "") or "Announcement"),
+                "body": str(rget(a, "body", "") or ""),
+                "org": name,
+                "color": org_color(name),
+                "pinned": bool(rget(a, "pinned", 0)),
+                "dt": dt,
+                "when": _when_label(dt, raw),
+            })
+
+        # 2) The volunteer's own activity notifications
+        for n in self._db("getNotifications", self.userID, default=[]) or []:
+            ntype = str(
+                rget(n, "type", "") or rget(n, "notification_type", "") or ""
+            )
+            if ntype in DUPLICATE_TYPES:
+                continue
+            title, color = NOTIF_TYPES.get(ntype, DEFAULT_NOTIF)
+            raw = rget(n, "created_at", "")
+            dt = _parse_dt(raw)
+            items.append({
+                "kind": "activity",
+                "title": title,
+                "body": str(rget(n, "message", "") or ""),
+                "org": "",
+                "color": color,
+                "pinned": False,
+                "dt": dt,
+                "when": _when_label(dt, raw),
+            })
+
+        items.sort(key=lambda i: i["dt"] or datetime.min, reverse=True)
+        return items
+
+    # ── Rendering ─────────────────────────────────────────────────────
+    def _render_notifications(self):
+        self._clear(self.notif_layout)
+
+        kind = self._notif_filter
+        items = [
+            i for i in self._notif_items
+            if kind == "all" or i["kind"] == kind
+        ]
+        if not items:
+            self._empty(self.notif_layout, EMPTY_TEXT[kind])
+            return
+
+        pinned = [i for i in items if i["pinned"]]
+        rest = [i for i in items if not i["pinned"]]
+
+        if pinned:
+            self._add(self.notif_layout, self._notif_group_header("Pinned"))
+            for i in pinned:
+                self._add(self.notif_layout, self._make_notif_card(i))
+
+        last_label = None
+        for i in rest:
+            label = _day_label(i["dt"])
+            if label != last_label:
+                self._add(self.notif_layout, self._notif_group_header(label))
+                last_label = label
+            self._add(self.notif_layout, self._make_notif_card(i))
+
+    def _notif_group_header(self, text):
+        lbl = QLabel(text.upper())
+        lbl.setStyleSheet(
+            "font-size: 11px; font-weight: bold; color: #6B5B77;"
+            " padding-top: 8px;"
+        )
+        return lbl
+
+    def _make_notif_card(self, item):
+        card = QFrame()
+        card.setObjectName(theme.EVENT_CARD)
+        card.setStyleSheet(
+            f"QFrame#{theme.EVENT_CARD} "
+            f"{{ border-left: 6px solid {item['color']}; }}"
+        )
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(16, 12, 16, 12)
+        lay.setSpacing(4)
+
+        # Title row: title ........ [PINNED] timestamp
+        head = QHBoxLayout()
+        head.setSpacing(8)
+
+        title = QLabel(item["title"])
+        title.setObjectName(theme.EVENT_TITLE_LIST)
+        title.setTextFormat(Qt.TextFormat.PlainText)
+        title.setWordWrap(True)
+        head.addWidget(title, 1)
+
+        if item["pinned"]:
+            pin = QLabel("PINNED")
+            pin.setObjectName(theme.EVENT_STATUS_BADGE)
+            head.addWidget(pin)
+
+        when = QLabel(item["when"])
+        when.setObjectName("EventOrg")          # muted italic, from the QSS
+        head.addWidget(when)
+        lay.addLayout(head)
+
+        if item["org"]:
+            org = QLabel(f"From {item['org']}")
+            org.setObjectName("EventMetaKey")   # muted bold, from the QSS
+            org.setTextFormat(Qt.TextFormat.PlainText)
+            lay.addWidget(org)
+
+        if item["body"]:
+            body = QLabel(item["body"])
+            body.setObjectName("EventDescription")  # regular weight
+            # Plain text so an announcement containing "<b>" or "&" shows
+            # exactly what the organizer typed.
+            body.setTextFormat(Qt.TextFormat.PlainText)
+            body.setWordWrap(True)
+            body.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            lay.addWidget(body)
+
+        return card
