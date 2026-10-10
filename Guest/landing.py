@@ -5,8 +5,8 @@ Owns the QStackedWidget of pages (guest home, register, login, volunteer
 home, FAQ, volunteer listing, org dashboard) plus the session-aware nav
 bar, the guest search bar, and the global mic button.
 
-The guest home hero scales with the window (see HeroLogo + _sync_hero_height).
-The three feature cards emit their own signals so they can route to
+The guest home hero is rendered by HeroSection (heroSection.py); the
+three feature cards emit their own signals so they can route to
 different pages.
 """
 
@@ -16,14 +16,15 @@ from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QCursor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QMenu, QStackedWidget, QScrollArea, QMessageBox,
+    QLabel, QPushButton, QMenu, QStackedWidget, QScrollArea,
+    QMessageBox,
 )
 
 import Events.theme as theme
 from db import Database
 from Events.searchBar import SearchBar
 from Guest.featuresSection import FeaturesSection
-from Guest.heroLogo import HeroLogo
+from Guest.heroSection import HeroSection
 from Guest.opportunitiesSection import OpportunitiesSection
 from Volunteer.volunteerRegister import VolunteerRegistration
 from Organization.orgRegister import OrganizationRegistration
@@ -54,11 +55,6 @@ LISTING_AFTER_HOME_TAB = 2
 
 
 class Landing(QMainWindow):
-    # Fraction of the window height the guest-home hero should occupy.
-    # Bump toward 0.85 for a bigger wordmark; drop toward 0.60 to leave
-    # more content visible below the fold.
-    HERO_HEIGHT_FRACTION = 0.72
-
     def __init__(self, settings: QSettings | None = None):
         super().__init__()
         self.settings = settings or QSettings()
@@ -88,9 +84,6 @@ class Landing(QMainWindow):
         theme.apply_theme(self._app(), self.is_dark_mode)
         self._update_logos()
         self._sync_search_bar_visibility()
-
-        # Make the hero fill the window height from the very first frame.
-        self._sync_hero_height()
 
         self._refresh_home_carousels()
 
@@ -124,12 +117,12 @@ class Landing(QMainWindow):
         h.setContentsMargins(20, 10, 20, 10)
         h.setSpacing(8)
 
-        self.navLogo = QLabel()
-        self.navLogo.setObjectName(theme.navLogo)
-        self.navLogo.setCursor(
+        self.nav_logo = QLabel()
+        self.nav_logo.setObjectName(theme.navLogo)
+        self.nav_logo.setCursor(
             QCursor(Qt.CursorShape.PointingHandCursor)
         )
-        self.navLogo.mousePressEvent = lambda e: self.show_home_page()
+        self.nav_logo.mousePressEvent = lambda e: self.show_home_page()
 
         self.navTabs = QWidget()
         self.navTabsLayout = QHBoxLayout(self.navTabs)
@@ -165,7 +158,7 @@ class Landing(QMainWindow):
         )
         self.btnThemeToggle.clicked.connect(self.toggle_theme)
 
-        h.addWidget(self.navLogo)
+        h.addWidget(self.nav_logo)
         h.addStretch()
         h.addWidget(self.navTabs)
         h.addWidget(self.btnConnect)
@@ -263,7 +256,7 @@ class Landing(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Hero (kept as an attribute so resizeEvent can resize it).
+        # Mission-style hero (image left, mission statement right)
         self.hero_widget = self._build_hero()
         layout.addWidget(self.hero_widget, 0)
 
@@ -281,11 +274,15 @@ class Landing(QMainWindow):
         layout.addWidget(self.featuresSection)
 
         self.opportunitiesSection = OpportunitiesSection()
-        self.opportunitiesSection = OpportunitiesSection()
-        self.opportunitiesSection.detailsRequested.connect(self._open_event_details)
-        self.opportunitiesSection.openLinkRequested.connect(self.open_external_link)
-        self.opportunitiesSection.rsvpRequested.connect(self._handle_home_rsvp)
-        layout.addWidget(self.opportunitiesSection)
+        self.opportunitiesSection.detailsRequested.connect(
+            self._open_event_details
+        )
+        self.opportunitiesSection.openLinkRequested.connect(
+            self.open_external_link
+        )
+        self.opportunitiesSection.rsvpRequested.connect(
+            self._handle_home_rsvp
+        )
         layout.addWidget(self.opportunitiesSection)
         layout.addStretch(1)
 
@@ -294,26 +291,10 @@ class Landing(QMainWindow):
         return page
 
     def _build_hero(self):
-        """Full-bleed hero. Height is driven by _sync_hero_height so it
-        grows with the window instead of sitting at a fixed 420px."""
-        hero = QWidget()
-        hero.setObjectName(theme.heroSection)
-        hero.setMinimumHeight(420)
-        hero.setSizePolicy(
-            hero.sizePolicy().horizontalPolicy(),
-            hero.sizePolicy().verticalPolicy(),
-        )
-
-        layout = QVBoxLayout(hero)
-        # Small side margins so the wordmark can be nearly full-width on
-        # wide screens but never touches the very edge. Set side margins
-        # to 0 if you want it truly edge-to-edge.
-        layout.setContentsMargins(20, 30, 20, 30)
-
-        self.hero_logo = HeroLogo()
-        self.hero_logo.setObjectName(theme.heroLogo)
-        layout.addWidget(self.hero_logo, 1)
-
+        """Mission-style hero: layered image on the left, mission
+        statement on the right, and a Learn More button."""
+        hero = HeroSection()
+        hero.learnMoreRequested.connect(self.show_volunteer_listing_page)
         return hero
 
     # ── Session-aware nav bar ─────────────────────────────────────────
@@ -361,8 +342,6 @@ class Landing(QMainWindow):
 
         logged_in = mode != NAV_GUEST
 
-        # Every nav tab is a plain text button - no toggle styling,
-        # no pill, no highlight. Matches the guest nav bar exactly.
         for key, label, callback in self._nav_spec(mode):
             btn = QPushButton(label)
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -489,46 +468,18 @@ class Landing(QMainWindow):
         self._set_nav_mode(NAV_GUEST)
         self._goto(self.guestHomePage)
 
-    # ── RSVP callback ─────────────────────────────────────────────────
+    # ── RSVP callbacks ────────────────────────────────────────────────
     def _handle_rsvp_success(self, opportunity_id):
         if not self.current_user:
             return
         self._goto(self.volunteerHomePage)
         self.volunteerHomePage.show_my_events()
 
-    # ── Home carousels ────────────────────────────────────────────────
-    def _refresh_home_carousels(self):
-        if not hasattr(self, "opportunitiesSection"):
-            return
-        volunteer_id = (self.current_user["userID"]
-                        if self.current_user else None)
-        try:
-            self.opportunitiesSection.load_from_db(
-                self.db, current_volunteer_id=volunteer_id
-            )
-        except Exception as e:
-            print("Failed to refresh home carousels:", e)
-
-    # ── Search ────────────────────────────────────────────────────────
-    def handle_search(self, filters: dict):
-        """SearchBar emits a full filter dict; forward it to the
-        listing page's FilterBar so its widgets reflect the query."""
-        if not filters:
-            return
-        self.show_volunteer_listing_page(filters=filters)
-
-    def open_external_link(self, url):
-        if url:
-            webbrowser.open(url)
-    def _open_event_details(self, card):
-        """Open the same EventDetailsDialog the listing page uses."""
-        from Events.eventDetailsDialog import EventDetailsDialog
-        EventDetailsDialog(card, self).exec()
-
     def _handle_home_rsvp(self, opportunity_id):
-        """RSVP from the guest-home carousels. The guest home is only shown
-        when no user is logged in, so this almost always lands on the login
-        prompt — but the logged-in branch is here for completeness."""
+        """RSVP from the guest-home carousels. The guest home is only
+        shown when no user is logged in, so this almost always lands on
+        the login prompt — but the logged-in branch is here for
+        completeness."""
         if not self.current_user:
             QMessageBox.information(
                 self, "Login required",
@@ -568,6 +519,36 @@ class Landing(QMainWindow):
         else:
             QMessageBox.warning(self, "Error", "Could not complete RSVP.")
 
+    def _open_event_details(self, card):
+        """Open the same EventDetailsDialog the listing page uses."""
+        from eventDetailsDialog import EventDetailsDialog
+        EventDetailsDialog(card, self).exec()
+
+    # ── Home carousels ────────────────────────────────────────────────
+    def _refresh_home_carousels(self):
+        if not hasattr(self, "opportunitiesSection"):
+            return
+        volunteer_id = (self.current_user["userID"]
+                        if self.current_user else None)
+        try:
+            self.opportunitiesSection.load_from_db(
+                self.db, current_volunteer_id=volunteer_id
+            )
+        except Exception as e:
+            print("Failed to refresh home carousels:", e)
+
+    # ── Search ────────────────────────────────────────────────────────
+    def handle_search(self, filters: dict):
+        """SearchBar emits a full filter dict; forward it to the
+        listing page's FilterBar so its widgets reflect the query."""
+        if not filters:
+            return
+        self.show_volunteer_listing_page(filters=filters)
+
+    def open_external_link(self, url):
+        if url:
+            webbrowser.open(url)
+
     # ── Theme ─────────────────────────────────────────────────────────
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode
@@ -584,39 +565,25 @@ class Landing(QMainWindow):
         path = theme.asset(filename)
 
         smooth = Qt.TransformationMode.SmoothTransformation
-
-        # Nav logo stays a small fixed height - that's fine.
         nav_pixmap = QPixmap(path).scaledToHeight(32, smooth)
-        self.navLogo.setPixmap(nav_pixmap)
+        self.nav_logo.setPixmap(nav_pixmap)
 
-        # Hero: hand the full-res pixmap to HeroLogo. It will fit itself
-        # to whatever box the layout gives it, on every resize.
-        if hasattr(self, "hero_logo"):
-            self.hero_logo.set_source(QPixmap(path))
+        # NEW: keep the hero wordmark in sync with the theme.
+        if (hasattr(self, "hero_widget")
+                and hasattr(self.hero_widget, "set_theme")):
+            self.hero_widget.set_theme(self.is_dark_mode)
 
     # ── Hero sizing ───────────────────────────────────────────────────
     def _sync_hero_height(self):
-        """Make the hero resize with the window. Called from resizeEvent
-        and once at startup from __init__."""
-        if not hasattr(self, "hero_widget"):
-            return
-        vh = self.height()
-        target = int(vh * self.HERO_HEIGHT_FRACTION)
-        # Never smaller than 420, never taller than the window minus a
-        # small allowance for the nav bar and search bar.
-        target = max(420, min(target, vh - 120))
-        # Pin both min and max so the layout can't disagree with us.
-        if self.hero_widget.minimumHeight() != target:
-            self.hero_widget.setMinimumHeight(target)
-            self.hero_widget.setMaximumHeight(target)
+        """The new HeroSection lays itself out — nothing to pin here.
+        Kept so resizeEvent stays simple."""
+        return
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "global_mic"):
             self.global_mic.reposition()
             self.global_mic.raise_()
-        self._sync_hero_height()
-        self._update_logos()
 
     # ── Utilities ─────────────────────────────────────────────────────
     def _app(self):

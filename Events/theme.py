@@ -65,6 +65,13 @@ FEATURE_DESC        = "FeatureDesc"
 BOTTOM_BAR          = "BottomBar"
 SLOGAN_TEXT         = "SloganText"
 
+# Hero mission typography (NEW — used by heroSection.py)
+HERO_MISSION_TITLE   = "HeroMissionTitle"
+HERO_MISSION_BODY_LG = "HeroMissionBodyLg"
+HERO_MISSION_BODY_MD = "HeroMissionBodyMd"
+HERO_MISSION_BODY_SM = "HeroMissionBodySm"
+HERO_LEARN_BTN       = "HeroLearnBtn"
+
 # Opportunity rows (home page carousels)
 OPPORTUNITY_ROW        = "OpportunityRow"
 OPPORTUNITY_ROW_TITLE  = "OpportunityRowTitle"
@@ -80,6 +87,7 @@ FORM_SUBTITLE   = "FormSubtitle"
 FIELD_LABEL     = "FieldLabel"
 PRIMARY_BTN     = "PrimaryBtn"
 SECONDARY_BTN   = "SecondaryBtn"
+BACK_BTN        = "BackBtn"                # NEW — standardized back button
 CAPTCHA_IMAGE   = "CaptchaImage"
 CAPTCHA_REFRESH = "CaptchaRefreshBtn"
 OTP_INPUT       = "OtpInput"
@@ -145,6 +153,7 @@ ORG_OPP_LIST    = "OrgOppList"
 # FAQ
 FAQ_PAGE          = "FAQPage"
 faqItem          = "FAQItem"
+FAQ_CATEGORY      = "FAQCategoryHeading"    # NEW — FAQ category headings
 FAQ_HEADER        = "FAQHeader"
 FAQ_QUESTION      = "FAQQuestion"
 FAQ_ANSWER        = "FAQAnswer"

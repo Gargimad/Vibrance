@@ -96,17 +96,21 @@ class Login(QWidget):
         login_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         login_btn.clicked.connect(self._attempt_login)
 
-        back_btn = QPushButton("← Back to Home")
-        back_btn.setObjectName(theme.SECONDARY_BTN)
+        back_btn = QPushButton("← Back")
+        back_btn.setObjectName(theme.BACK_BTN)
         back_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         if self.on_back_click:
             back_btn.clicked.connect(self.on_back_click)
 
         activate_btn = QPushButton("Activate imported account")
-        activate_btn.setObjectName(theme.SECONDARY_BTN)
+        activate_btn.setObjectName(theme.BACK_BTN)
         activate_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         activate_btn.clicked.connect(self._activate_imported_account)
-
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addWidget(back_btn)
+        top_row.addStretch(1)
+        card_layout.addLayout(top_row)
         card_layout.addWidget(title)
         card_layout.addWidget(subtitle)
         card_layout.addSpacing(4)
@@ -116,7 +120,6 @@ class Login(QWidget):
         card_layout.addSpacing(6)
         card_layout.addWidget(login_btn)
         card_layout.addWidget(activate_btn)
-        card_layout.addWidget(back_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         outer.addWidget(card)
 

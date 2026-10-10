@@ -68,7 +68,7 @@ class VolunteerPage(QWidget):
         layout.setContentsMargins(20, 12, 20, 12)
 
         back_btn = QPushButton("← Back")
-        back_btn.setObjectName(theme.VOLUNTEER_BACK_BTN)
+        back_btn.setObjectName(theme.BACK_BTN)
         back_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         if self.on_back_click:
             back_btn.clicked.connect(self.on_back_click)

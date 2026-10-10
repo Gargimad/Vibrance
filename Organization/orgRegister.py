@@ -20,10 +20,10 @@ import random
 import string
 
 from PyQt6.QtCore import Qt, QByteArray
-from PyQt6.QtGui import QAction, QPixmap
+from PyQt6.QtGui import QAction, QPixmap, QCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QFrame, QComboBox, QScrollArea, QMessageBox, QTextEdit,
+    QFrame, QComboBox, QScrollArea, QMessageBox, QTextEdit
 )
 
 try:
@@ -87,6 +87,17 @@ class OrganizationRegistration(QWidget):
 
     # ── Form construction ─────────────────────────────────────────────────
     def _build_form(self, layout):
+        back_btn = QPushButton("← Back")
+        back_btn.setObjectName(theme.BACK_BTN)
+        back_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        if self.on_back_click:
+            back_btn.clicked.connect(self.on_back_click)
+
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addWidget(back_btn)
+        top_row.addStretch(1)
+        layout.addLayout(top_row)
         title = QLabel("Register Organization")
         title.setObjectName(theme.FORM_TITLE)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -98,7 +109,11 @@ class OrganizationRegistration(QWidget):
         subtitle.setObjectName(theme.FORM_SUBTITLE)
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setWordWrap(True)
-
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addWidget(back_btn)
+        top_row.addStretch(1)
+        layout.addLayout(top_row)
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addSpacing(6)
@@ -211,14 +226,7 @@ class OrganizationRegistration(QWidget):
         submit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         submit_btn.clicked.connect(self._submit)
 
-        back_btn = QPushButton("← Back to Home")
-        back_btn.setObjectName(theme.SECONDARY_BTN)
-        back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        if self.on_back_click:
-            back_btn.clicked.connect(self.on_back_click)
-
         layout.addWidget(submit_btn)
-        layout.addWidget(back_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
     # ── Captcha ───────────────────────────────────────────────────────────
     def generate_captcha(self):

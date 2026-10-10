@@ -339,15 +339,15 @@ class FAQPage(QWidget):
         title = QLabel("Frequently Asked Questions")
         title.setObjectName(theme.FAQ_TITLE)
 
-        back_btn = QPushButton("Back")
-        back_btn.setObjectName(theme.SECONDARY_BTN)
+        back_btn = QPushButton("← Back")
+        back_btn.setObjectName(theme.BACK_BTN)
         back_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         if self.on_back_click:
             back_btn.clicked.connect(self.on_back_click)
 
+        header_layout.addWidget(back_btn)
         header_layout.addWidget(title)
         header_layout.addStretch()
-        header_layout.addWidget(back_btn)
 
         main_layout.addWidget(header_widget)
 

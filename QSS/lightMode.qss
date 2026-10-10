@@ -1127,3 +1127,59 @@ QPushButton#EventDetailsBtn:hover {
 QPushButton#EventDetailsBtn:pressed {
     background-color: rgba(127, 127, 127, 60);
 }
+/* ── Standard back button used on every sub-page ────────────── */
+QPushButton#BackBtn {
+    background-color: #BFAFB3 ;
+    border: 1px solid rgba(127, 127, 127, 90);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #2D1A3E;
+
+}
+QPushButton#BackBtn:hover {
+    background-color: rgba(127, 127, 127, 30);
+    border-color: rgba(127, 127, 127, 160);
+}
+QPushButton#BackBtn:pressed {
+    background-color: rgba(127, 127, 127, 60);
+}
+/* ── Mission hero typography ────────────────────────────────── */
+QLabel#HeroMissionTitle {
+    font-size: 90px;
+    font-weight: 900;
+    letter-spacing: -2px;
+    color: #2D1A3E; 
+}
+QLabel#HeroMissionBodyLg {
+    font-size: 25px;
+    font-weight: 400;
+    color: #2D1A3E; 
+}
+QLabel#HeroMissionBodyMd {
+    font-size: 30px;
+    font-weight: 400;
+    color: #2D1A3E; 
+}
+QLabel#HeroMissionBodySm {
+    font-size: 25px;
+    font-weight: 700;
+    color: #2D1A3E; 
+}
+
+/* ── Learn More button ──────────────────────────────────────── */
+QPushButton#HeroLearnBtn {
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    background-color: #2D1A3E;
+    color: #F5F0EE;
+}
+QPushButton#HeroLearnBtn:hover {
+    background-color: #4A2C66;
+}
+QPushButton#HeroLearnBtn:pressed {
+    background-color: #1F1129;
+}
