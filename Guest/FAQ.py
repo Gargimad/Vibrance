@@ -1,25 +1,24 @@
-'''
-Gargi Madala
-Congressional App Challenge 2026
-Moxie's FAQ Page
+"""
+FAQ.py — Moxie FAQ page, styled after the Bolt FAQ pattern:
 
-It contains 2 classes: FAQItem and an FAQPage.
-The FAQItem class contains the questions and the 
-answers while the FAQPage class contains searchbars 
-and categories that the user can choose from.
-'''
-#My imports: I used mainly PyQt6 for my whole project. 
-#Thus, these are the following imports from that library
+  [big centered title]
+  [centered subtitle]
+  [thin search bar]
+  [category pills]
+  [bold category heading]
+  [pill cards, question on left, circular +/− toggle on right]
+  [answer appears inside the same card when expanded]
+"""
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QScrollArea, QFrame, QPushButton, QButtonGroup,
 )
-#This is importing the theme.py file which contains all the stylesheets for my project.
+
 import Events.theme as theme
 
-#This is the list of categories that the user can choose from in the FAQ page.
+
 categories = [
     "Getting Started",
     "For Volunteers",
@@ -27,20 +26,20 @@ categories = [
     "Hours & Impact",
     "Account & Support",
 ]
-#faqData is a list of dictionaries that contains the questions and answers for the FAQ page. Each dictionary contains the category, a question, and an answer.
+
 faqData = [
-    #Questions for the Getting Started category
+    # ── Getting Started ───────────────────────────────────────────────
     {
         "category": "Getting Started",
         "question": "What is Moxie?",
         "answer": (
             "Moxie is a platform that connects volunteers with local "
-            "organizations, community projects, and nonprofits. Volunteers "
-            "can browse opportunities, RSVP to events they care about, "
-            "and track the hours they contribute. Organizations get a "
-            "dashboard to post opportunities, manage their roster, verify "
-            "hours, and communicate with their volunteers — all in one "
-            "place."
+            "organizations, community projects, and nonprofits. "
+            "Volunteers can browse opportunities, RSVP to events they "
+            "care about, and track the hours they contribute. "
+            "Organizations get a dashboard to post opportunities, manage "
+            "their roster, verify hours, and communicate with their "
+            "volunteers — all in one place."
         ),
     },
     {
@@ -56,28 +55,32 @@ faqData = [
     },
     {
         "category": "Getting Started",
-        "question": "How do I know which events are hosted by Moxie organizations?",
+        "question": (
+            "How do I know which events are hosted by Moxie organizations?"
+        ),
         "answer": (
             "Every opportunity card carries a small label near the top: "
             "'Moxie' if the organization registered directly on the "
             "platform, or 'External' if the listing was imported from an "
             "outside source like the Volunteer Connector. Moxie-hosted "
-            "events also show a 'Verified on Moxie' pill on the thumbnail "
-            "and use a 'Sign up' button, while imported events use 'RSVP' "
-            "and link back to the original posting."
+            "events also show a 'Verified on Moxie' pill on the "
+            "thumbnail and use a 'Sign up' button, while imported events "
+            "use 'RSVP' and link back to the original posting."
         ),
     },
-    #Questions in the For Volunteers category
+
+    # ── For Volunteers ────────────────────────────────────────────────
     {
         "category": "For Volunteers",
         "question": "How do I sign up as a volunteer?",
         "answer": (
-            "Click the Register dropdown in the navigation bar and choose "
-            "'Register as a Volunteer'. Fill in your name, email, and a "
-            "password of at least eight characters, then verify your "
-            "email with the six-digit code we send you. Everything else "
-            "— date of birth, country, zip code, and skills — is optional "
-            "and can be added later from your profile page."
+            "Click the Register dropdown in the navigation bar and "
+            "choose 'Register as a Volunteer'. Fill in your name, email, "
+            "and a password of at least eight characters, then verify "
+            "your email with the six-digit code we send you. Everything "
+            "else — date of birth, city, high school, zip code, and "
+            "skills — is optional and can be added later from your "
+            "profile page."
         ),
     },
     {
@@ -95,13 +98,12 @@ faqData = [
         "category": "For Volunteers",
         "question": "How do I find opportunities near me?",
         "answer": (
-            "Open the Volunteer tab from the nav bar and use the filter "
-            "row at the top. You can search by keyword, filter by type "
-            "(in-person or remote), type in a location or zip code, and "
-            "narrow results further with the 'More filters' button to "
-            "pick a specific cause or date range. Your dashboard also "
-            "suggests events based on the skills you've listed in your "
-            "profile."
+            "Open the Discover group in the nav bar and choose 'Browse "
+            "Events'. Use the filter row at the top to search by keyword, "
+            "pick one or more Causes (career clusters) you care about, "
+            "choose your Georgia city from the dropdown, or type your "
+            "ZIP code. You can also narrow the list by school or date "
+            "range under 'More filters'."
         ),
     },
     {
@@ -117,17 +119,18 @@ faqData = [
             "the same tab at any time."
         ),
     },
-    #Questions in the For Organizations category
+
+    # ── For Organizations ─────────────────────────────────────────────
     {
         "category": "For Organizations",
         "question": "How can my nonprofit post opportunities?",
         "answer": (
-            "Register your organization from the Register dropdown on the "
-            "home page, verify your email, and log in. Your dashboard "
-            "gives you a full set of tools: create, edit, and cancel "
-            "opportunities; post announcements to your volunteers; review "
-            "signups and check-ins; verify hours; and export reports for "
-            "grant applications or board updates."
+            "Register your organization from the Register dropdown on "
+            "the home page, verify your email, and log in. Your "
+            "dashboard gives you a full set of tools: create, edit, and "
+            "cancel opportunities; post announcements to your "
+            "volunteers; review signups and check-ins; verify hours; and "
+            "export reports for grant applications or board updates."
         ),
     },
     {
@@ -135,11 +138,11 @@ faqData = [
         "question": "Are there any fees for organizations?",
         "answer": (
             "Basic posting and organization listings are free. You can "
-            "publish as many opportunities as you like, invite volunteers, "
-            "track their hours, and export reports at no cost. If we "
-            "introduce optional paid features in the future, they'll be "
-            "clearly marked and completely optional — the core "
-            "volunteer-management tools will always remain free."
+            "publish as many opportunities as you like, invite "
+            "volunteers, track their hours, and export reports at no "
+            "cost. If we introduce optional paid features in the future, "
+            "they'll be clearly marked and completely optional — the "
+            "core volunteer-management tools will always remain free."
         ),
     },
     {
@@ -161,67 +164,56 @@ faqData = [
         "question": "How do I manage volunteers who have signed up?",
         "answer": (
             "The 'Volunteers' tab lists everyone who has ever signed up "
-            "for one of your events, sorted by total hours. Click any row "
-            "to see their full history with your organization, leave "
+            "for one of your events, sorted by total hours. Click any "
+            "row to see their full history with your organization, leave "
             "private notes or tags, and — if needed — ban them from "
-            "future signups. From 'Reports' you can filter by date range, "
-            "volunteer, or opportunity, and export the results to CSV."
+            "future signups. From 'Reports' you can filter by date "
+            "range, volunteer, or opportunity, and export the results "
+            "to CSV."
         ),
     },
-    #Questions in the Hours & Impact category
+
+    # ── Hours & Impact ────────────────────────────────────────────────
     {
         "category": "Hours & Impact",
-        "question": "How do I track my volunteer hours?",
+        "question": "How do I check in and check out of an event?",
         "answer": (
-            "From your dashboard, open the 'My Events' tab. Each event "
-            "you've signed up for has a Check In button while you're on "
-            "site and a Check Out button when you leave. Moxie records "
-            "the time between them and adds it to your running total, "
-            "which you can see any time on your dashboard. If a check-in "
-            "or check-out is missed, the organization can adjust your "
-            "hours when they verify them."
-        ),
-    },
-    {
-        "category": "Hours & Impact",
-        "question": "How are my hours verified?",
-        "answer": (
-            "After you check out, the organization reviews the entry in "
-            "their attendance view and marks it as verified. Verified "
-            "hours carry a green indicator on your event history and are "
-            "the ones counted in the impact record you can export. "
-            "Organizations can also mark a signup as a no-show if you "
-            "didn't attend, in which case the hours aren't counted."
+            "Open 'My Events' from the nav bar. At the start of the "
+            "event tap Check In; when you finish, tap Check Out. Moxie "
+            "records both timestamps and calculates the hours you "
+            "contributed. If the organization has a check-in code open "
+            "on their event page, scanning that QR code performs the "
+            "same action."
         ),
     },
     {
         "category": "Hours & Impact",
-        "question": "Can I export a record of my volunteer work?",
+        "question": "How do verified hours work?",
         "answer": (
-            "Yes. On your dashboard, click 'Export verified impact "
-            "record'. Moxie produces a CSV listing every verified event "
-            "you've completed, with the opportunity title, organization, "
-            "date, and hours for each. The file opens in Excel or Google "
-            "Sheets and can be attached to scholarship applications, "
-            "school service requirements, or résumés."
+            "After you check out, the hours you logged appear as "
+            "'pending' until the organization verifies them. Once an "
+            "organizer opens the event in their dashboard and clicks "
+            "'Verify hours', that entry is marked verified and locked. "
+            "Verified hours appear on your impact record and on any "
+            "report your organization runs."
         ),
     },
     {
         "category": "Hours & Impact",
-        "question": "What happens if I can't make it to an event I signed up for?",
+        "question": "Can I export my volunteering history?",
         "answer": (
-            "Open 'My Events' and click Cancel next to the event. "
-            "Cancelling frees your spot for someone else and notifies "
-            "the organization, so please do it as early as you can. If "
-            "you simply don't show up, the organization may mark you as "
-            "a no-show — this doesn't ban you, but it does appear on "
-            "their private record for that event."
+            "Yes. From the Account group in the nav bar choose "
+            "'Export my data'. You can export your hours log, event "
+            "registrations, or bookmarked events as either a CSV "
+            "spreadsheet or a formatted PDF report. Exports only ever "
+            "contain your own information."
         ),
     },
-    #Questions in the Account & Support category
+
+    # ── Account & Support ─────────────────────────────────────────────
     {
         "category": "Account & Support",
-        "question": "How do I reset my account password?",
+        "question": "I forgot my password. How do I reset it?",
         "answer": (
             "Password reset is not automated yet. Email "
             "support@moxiecommunity.org from the address on your account "
@@ -237,15 +229,17 @@ faqData = [
         "answer": (
             "Log in and open the 'Profile' tab in the navigation bar. "
             "You can update your first and last name, phone number, "
-            "skills, and notification preferences, then click Save "
-            "Changes. Changing the email on your account isn't supported "
-            "from the app yet — contact support and we'll update it for "
-            "you."
+            "city, state, high school, skills, and notification "
+            "preferences, then click Save Changes. Changing the email on "
+            "your account isn't supported from the app yet — contact "
+            "support and we'll update it for you."
         ),
     },
     {
         "category": "Account & Support",
-        "question": "What is two-factor authentication and is it required?",
+        "question": (
+            "What is two-factor authentication and is it required?"
+        ),
         "answer": (
             "Two-factor authentication (2FA) sends a one-time six-digit "
             "code to your email every time you log in, on top of your "
@@ -269,26 +263,27 @@ faqData = [
     },
 ]
 
-#This is the FAQItem class containing the questions and answers for the questions.
-#It uses the lists above to create the questions and answers. 
-#It also contains a toggle button that expands or collapses the answer when clicked.
+
 class FAQItem(QFrame):
-    #Innitializing the FAQItem class with the question and answer as parameters.
+    """A single question card: pill shape, question on the left, a
+    circular +/− toggle on the right, and the answer revealed inline."""
+
     def __init__(self, question: str, answer: str, parent=None):
         super().__init__(parent)
         self.setObjectName(theme.faqItem)
-
         self.is_expanded = False
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(24, 16, 16, 16)
+        layout.setSpacing(0)
 
+        # Header row: question + circular toggle
         header = QWidget()
         header.setObjectName(theme.FAQ_HEADER)
         header.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(16)
 
         self.lbl_question = QLabel(question)
         self.lbl_question.setObjectName(theme.FAQ_QUESTION)
@@ -296,16 +291,24 @@ class FAQItem(QFrame):
 
         self.btn_toggle = QPushButton("+")
         self.btn_toggle.setObjectName(theme.FAQ_TOGGLE_BTN)
-        self.btn_toggle.setFixedWidth(32)
-        self.btn_toggle.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_toggle.setFixedSize(32, 32)
+        self.btn_toggle.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.btn_toggle.clicked.connect(self.toggle)
 
         header_layout.addWidget(self.lbl_question, 1)
-        header_layout.addWidget(self.btn_toggle, 0)
+        header_layout.addWidget(
+            self.btn_toggle, 0, Qt.AlignmentFlag.AlignVCenter
+        )
 
+        # Answer (hidden by default)
         self.lbl_answer = QLabel(answer)
         self.lbl_answer.setObjectName(theme.FAQ_ANSWER)
         self.lbl_answer.setWordWrap(True)
+        self.lbl_answer.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         self.lbl_answer.setVisible(False)
 
         layout.addWidget(header)
@@ -316,10 +319,15 @@ class FAQItem(QFrame):
     def toggle(self):
         self.is_expanded = not self.is_expanded
         self.lbl_answer.setVisible(self.is_expanded)
-        self.btn_toggle.setText("-" if self.is_expanded else "+")
+        self.btn_toggle.setText("−" if self.is_expanded else "+")
+        # Tell QSS so it can swap the circle color on open.
+        self.btn_toggle.setProperty(
+            "expanded", "true" if self.is_expanded else "false"
+        )
+        self.btn_toggle.style().unpolish(self.btn_toggle)
+        self.btn_toggle.style().polish(self.btn_toggle)
 
 
-# ── Full FAQ page ────────────────────────────────────────────────────────
 class FAQPage(QWidget):
     def __init__(self, on_back_click=None, parent=None):
         super().__init__(parent)
@@ -328,48 +336,83 @@ class FAQPage(QWidget):
         self._active_category = "All"
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(40, 24, 40, 24)
-        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # ── Header ─────────────────────────────────────────────────────
-        header_widget = QWidget()
-        header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-
-        title = QLabel("Frequently Asked Questions")
-        title.setObjectName(theme.FAQ_TITLE)
-
+        # ── Top row: back button ──────────────────────────────────────
+        top = QWidget()
+        top_layout = QHBoxLayout(top)
+        top_layout.setContentsMargins(40, 16, 40, 0)
         back_btn = QPushButton("← Back")
         back_btn.setObjectName(theme.BACK_BTN)
         back_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         if self.on_back_click:
             back_btn.clicked.connect(self.on_back_click)
+        top_layout.addWidget(back_btn)
+        top_layout.addStretch(1)
+        main_layout.addWidget(top)
 
-        header_layout.addWidget(back_btn)
-        header_layout.addWidget(title)
-        header_layout.addStretch()
+        # ── Scrollable content ────────────────────────────────────────
+        scroll = QScrollArea()
+        scroll.setObjectName(theme.FAQ_SCROLL_AREA)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.scroll = scroll
 
-        main_layout.addWidget(header_widget)
+        content = QWidget()
+        content.setObjectName(theme.FAQ_SCROLL_CONTENT)
+        self.content_layout = QVBoxLayout(content)
+        self.content_layout.setContentsMargins(60, 10, 60, 60)
+        self.content_layout.setSpacing(10)
 
-        # ── Search ─────────────────────────────────────────────────────
+        # ── Title + subtitle ──────────────────────────────────────────
+        title = QLabel("Frequently Asked Questions")
+        title.setObjectName(theme.FAQ_TITLE)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.content_layout.addWidget(title)
+
+        subtitle = QLabel(
+            "New to Moxie or want to get the most out of your "
+            "volunteering? This guide covers the answers volunteers and "
+            "organizations ask for most."
+        )
+        subtitle.setObjectName(theme.FAQ_SUBTITLE)
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setWordWrap(True)
+        self.content_layout.addWidget(subtitle)
+
+        self.content_layout.addSpacing(20)
+
+        # ── Search bar (centered, thin) ───────────────────────────────
+        search_row = QHBoxLayout()
+        search_row.addStretch(1)
         self.search_input = QLineEdit()
         self.search_input.setObjectName(theme.FAQ_searchInput)
         self.search_input.setPlaceholderText(
             "Search questions, keywords, or answers..."
         )
+        self.search_input.setFixedWidth(520)
         self.search_input.textChanged.connect(self._apply_filters)
-        main_layout.addWidget(self.search_input)
+        search_row.addWidget(self.search_input)
+        search_row.addStretch(1)
+        self.content_layout.addLayout(search_row)
 
-        # ── Category filter pills ──────────────────────────────────────
+        self.content_layout.addSpacing(6)
+
+        # ── Category pills ────────────────────────────────────────────
         cat_row = QHBoxLayout()
-        cat_row.setSpacing(6)
+        cat_row.setSpacing(8)
+        cat_row.addStretch(1)
         self._cat_group = QButtonGroup(self)
         self._cat_group.setExclusive(True)
 
         self._cat_buttons = {}
         for cat in ["All"] + categories:
             btn = QPushButton(cat)
-            btn.setObjectName(theme.VIEW_TOGGLE_BTN)
+            btn.setObjectName(theme.FAQ_CAT_PILL)
             btn.setCheckable(True)
             btn.setChecked(cat == "All")
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -381,37 +424,28 @@ class FAQPage(QWidget):
             cat_row.addWidget(btn)
 
         cat_row.addStretch(1)
-        main_layout.addLayout(cat_row)
+        self.content_layout.addLayout(cat_row)
 
-        # ── Scrollable, category-grouped list ─────────────────────────
-        scroll = QScrollArea()
-        scroll.setObjectName(theme.FAQ_SCROLL_AREA)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll = scroll
+        self.content_layout.addSpacing(24)
 
-        scroll_content = QWidget()
-        scroll_content.setObjectName(theme.FAQ_SCROLL_CONTENT)
-        self.items_layout = QVBoxLayout(scroll_content)
-        self.items_layout.setContentsMargins(0, 8, 0, 8)
-        self.items_layout.setSpacing(12)
-
-        # Heading + items per category, so a heading always sits above
-        # its group and can be hidden cleanly when nothing matches.
+        # ── Grouped FAQ list ──────────────────────────────────────────
         self.category_headings = {}
         self.faq_widgets = []
 
         for cat in categories:
-            hheading = QLabel(cat)
-            hheading.setObjectName(theme.searchCategory)
-            self.items_layout.addWidget(hheading)
-            self.category_headings[cat] = hheading
+            heading = QLabel(cat)
+            heading.setObjectName(theme.FAQ_CATEGORY)
+            self.content_layout.addWidget(heading)
+            self.category_headings[cat] = heading
+
             for faq in faqData:
                 if faq["category"] != cat:
                     continue
                 item = FAQItem(faq["question"], faq["answer"])
-                self.items_layout.addWidget(item)
+                self.content_layout.addWidget(item)
                 self.faq_widgets.append((faq, item))
+
+            self.content_layout.addSpacing(20)
 
         self.lbl_no_results = QLabel(
             "No matching FAQ questions found. Try a different keyword "
@@ -421,27 +455,25 @@ class FAQPage(QWidget):
         self.lbl_no_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_no_results.setWordWrap(True)
         self.lbl_no_results.setVisible(False)
-        self.items_layout.addWidget(self.lbl_no_results)
+        self.content_layout.addWidget(self.lbl_no_results)
 
-        self.items_layout.addStretch()
-        scroll.setWidget(scroll_content)
+        self.content_layout.addStretch(1)
+        scroll.setWidget(content)
         main_layout.addWidget(scroll, 1)
 
-    # ── Filtering ──────────────────────────────────────────────────────
+    # ── Filtering ─────────────────────────────────────────────────────
     def _set_category(self, category: str):
         self._active_category = category
         self._apply_filters()
 
     def filter_faqs(self, query: str):
-        """Kept for backwards compatibility with any older callers."""
+        """Kept for backwards compatibility with older callers."""
         self._apply_filters()
 
     def _apply_filters(self):
         query = self.search_input.text().lower().strip()
         active = self._active_category
 
-        # Count how many items are visible under each category so we can
-        # hide headings that have nothing left to show.
         visible_per_cat = {c: 0 for c in categories}
 
         for faq, widget in self.faq_widgets:

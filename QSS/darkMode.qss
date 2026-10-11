@@ -1,583 +1,246 @@
 /* ==========================================================================
-   MOXIE BRAND PALETTE — DARK MODE
-
-   Same design rule as light mode:
-     - Square corners everywhere. Every border-radius is 0.
-     - Exception: the search bar is a rounded pill (border-radius: 22px).
-
-   Palette — dark
-   --------------------------------------------------------------------------
-   Page background         #1E1626   window + page
-   Nav / Header Surface    #2A1F33   nav bar, bottom bar, page header
-   Filter Surface          #261C2E   search + filter strips
-   Card Surface            #2E2238   cards, popups, dropdown lists, dialogs
-   Input Surface           #251A2E   input background (unfocused)
-   Input Surface Focus     #352543   input background (focused)
-   Border                  #4A3A54   card + input borders
-   Border Soft             #3A2C43   subtle card borders
-   Disabled Surface        #3A2C43   disabled button background
-
-   Brand core — brightened for contrast on dark
-   --------------------------------------------------------------------------
-   Moxie Purple (brand)    #B39CDB   titles, primary button
-   Purple Hover            #C9B4EC   primary button hover
-   Blueberry (accent)      #7B8BE0   card top rule, focus rings, RSVP
-   Blueberry Hover         #93A2F0   RSVP button hover
-
-   Text
-   --------------------------------------------------------------------------
-   Text on Dark            #F5F0EE   text on purple / blueberry buttons
-   Text Primary            #EDE6F2   input text, body text
-   Text Label              #C7B9D4   field labels, descriptions
-   Text Muted              #9C8EA9   subtitles, secondary text
-   Text Disabled           #6B5B77   disabled button text
-
-   Interaction
-   --------------------------------------------------------------------------
-   Selection BG            #B39CDB
-   Selection Text          #1E1626
-   Hover BG (on nav)       rgba(179, 156, 219, 0.12)
-   Recording Red           #E74C3C
+   MOXIE — DARK MODE (7-color palette)
+   bg #1E1626 · surface #2A1F33 · card #2E2238 · brand #B39CDB
+   accent #7B8BE0 · muted #4A3A54 · alert #E74C3C
    ========================================================================== */
+QMainWindow, #RegisterScroll, #RegisterScroll > QWidget#qt_scrollarea_viewport,
+#RegisterScrollContent, #HomeScrollArea, #HomeScrollArea > QWidget#qt_scrollarea_viewport,
+#HomeScrollContent, #FAQPage, #FAQScrollArea, #FAQScrollArea > QWidget#qt_scrollarea_viewport,
+#FAQScrollContent, #VolunteerPage, #VolunteerScroll, #VolunteerScroll > QWidget#qt_scrollarea_viewport,
+#VolunteerGridContainer, #VolunteerListContainer, #VolunteerContentStack,
+#VolunteerEmptyWrap, #FeaturesSection, #OpportunitiesSection,
+#MatchPage, #ExportDialog, #ClusterMultiSelect, QMessageBox,
+QWidget#LoginCard, QDialog, #VolunteerDashboard { background-color: #1E1626; border: none; }
+#VolunteerDashboard QLabel { color: #B39CDB; }
 
-/* ── Window & General Layout ───────────────────────────────────── */
-QMainWindow {
-    background-color: #1E1626;
-}
+/* ── Nav / surfaces ─────────────────────────────────────────────── */
+#NavBar, #BottomBar, #VolunteerHeader { background-color: #2A1F33; color: #B39CDB; }
+#NavBar { border-bottom: 1px solid rgba(179,156,219,0.10); }
+#BottomBar { border-top: 1px solid #4A3A54; border-bottom: none; }
+#FilterBar, #SearchBar { background-color: #2E2238; border-bottom: 1px solid #4A3A54; }
+#NavLogo { color: #B39CDB; font-size: 18px; font-weight: bold; }
+#SloganText { font-size: 20px; color: #B39CDB; }
 
-#NavBar {
-    background-color: #2A1F33;
-    border-bottom: 1px solid rgba(216, 203, 199, 0.10);
-    color: #EDE6F2;
-}
-
-#NavLogo {
-    color: #F5F0EE;
-    font-size: 18px;
-    font-weight: bold;
-}
-
-#HeroLogo {
-    font-size: 50px;
-}
-
-#BottomBar {
-    background-color: #2A1F33;
-    border-top: 1px solid #4A3A54;
-}
-
-#SloganText {
-    font-size: 20px;
-    color: #EDE6F2;
-}
-
-/* ── Form Container Card ───────────────────────────────────────── */
-#RegisterCard {
+/* ── Cards / dialogs / menus ─────────────────────────────────────── */
+#RegisterCard, #LoginCard, #EventDetailsDialog, #EventCard, #EventCardMoxie,
+#FeatureCard, #FAQItem, #MatchCard, #ExportSection, QMenu,
+QComboBox QAbstractItemView, QListWidget#SearchSuggestions,
+QDialog#ChatHistoryDialog, QListWidget#ChatHistoryList, QDialog,
+#VolunteerDashboard #EventCard {
     background-color: #2E2238;
     border: 1px solid #4A3A54;
-    border-top: 4px solid #7B8BE0;
     border-radius: 0px;
+    color: #B39CDB;
 }
+#RegisterCard, #FeatureCard, #EventDetailsDialog,
+#VolunteerDashboard #EventCard { border-top: 4px solid #7B8BE0; }
+#EventCardMoxie { border: 2px solid #7B8BE0; }
+#EventCard:hover, #EventCardMoxie:hover { border-color: #7B8BE0; }
+#FAQItem { border-left: 4px solid #7B8BE0; }
 
-#PasswordInput {
-    padding-right: 32px;
-}
-
-#FormTitle {
-    font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
-    font-size: 30px;
-    font-weight: bold;
-    color: #EDE6F2;
-}
-
-#FormSubtitle {
-    font-size: 14px;
-    color: #9C8EA9;
-}
-
-#FieldLabel {
-    font-size: 12px;
-    font-weight: bold;
-    color: #C7B9D4;
-    margin-top: 2px;
-}
-
-/* ── Form Inputs ───────────────────────────────────────────────── */
-QLineEdit, QDateEdit, QComboBox {
-    background-color: #251A2E;
+/* ── Form controls ───────────────────────────────────────────────── */
+QLineEdit, QDateEdit, QComboBox, #FilterSearchInput, #FilterLocationInput,
+#FilterCombo, #FilterDate, #FAQSearchInput {
+    background-color: #2E2238;
     border: 1px solid #4A3A54;
     border-radius: 0px;
     padding: 11px 14px;
     font-size: 14px;
-    color: #EDE6F2;
+    color: #B39CDB;
+    min-height: 18px;
     selection-background-color: #B39CDB;
     selection-color: #1E1626;
 }
-
-QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
+QLineEdit:focus, QDateEdit:focus, QComboBox:focus,
+#FilterSearchInput:focus, #FilterLocationInput:focus,
+#FilterCombo:focus, #FilterDate:focus, #FAQSearchInput:focus {
     border: 2px solid #7B8BE0;
     padding: 10px 13px;
-    background-color: #352543;
+}
+QLineEdit QToolButton { border: none; background: transparent; color: #4A3A54; padding: 0 6px; }
+QLineEdit QToolButton:hover { color: #7B8BE0; }
+QComboBox::drop-down { border: none; padding-right: 10px; }
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+QPushButton { background: transparent; color: #B39CDB; border: none;
+              padding: 8px 16px; font-size: 14px; border-radius: 0px; }
+QPushButton:hover { background-color: rgba(179,156,219,0.12); }
+QPushButton:focus { border: 2px solid #7B8BE0; padding: 6px 14px; }
+QPushButton::menu-indicator { image: none; width: 0; }
+
+#PrimaryBtn, #VolunteerEmptyBtn, #SearchBtn, #HeroLearnBtn, #EventLinkBtn {
+    background-color: #B39CDB; color: #1E1626;
+    font-weight: bold; border: none; padding: 14px;
+}
+#PrimaryBtn:hover, #VolunteerEmptyBtn:hover, #HeroLearnBtn:hover,
+#SearchBtn:hover, #EventLinkBtn:hover { background-color: #7B8BE0; }
+#PrimaryBtn:focus, #VolunteerEmptyBtn:focus, #SearchBtn:focus,
+#EventLinkBtn:focus { border: 2px solid #B39CDB; padding: 12px; }
+
+#SecondaryBtn, #DetailsCloseBtn, #FilterClearBtn, #FilterMoreBtn, #BackBtn {
+    background: transparent; color: #4A3A54;
+    border: 1px solid #4A3A54; padding: 8px 14px; font-size: 13px;
+}
+#SecondaryBtn:hover, #DetailsCloseBtn:hover, #FilterClearBtn:hover,
+#FilterMoreBtn:hover, #BackBtn:hover { color: #7B8BE0; border-color: #7B8BE0; }
+#FilterMoreBtn:checked { color: #B39CDB; border-color: #7B8BE0; }
+
+#EventRsvpBtn { background-color: #7B8BE0; color: #F5F0EE; }
+#EventRsvpBtn:hover { background-color: #B39CDB; color: #1E1626; }
+#EventRsvpBtn:disabled, #EventLinkBtn:disabled, #SearchBtn:disabled {
+    background-color: #4A3A54; color: #2E2238;
 }
 
-#OtpInput {
-    font-size: 26px;
-    padding: 14px;
-}
-#OtpInput:focus {
-    padding: 13px;
-}
+#ViewToggleBtn { background-color: #2E2238; color: #B39CDB;
+                 border: 1px solid #4A3A54; padding: 8px 16px;
+                 font-size: 13px; font-weight: bold; }
+#ViewToggleBtn:checked { background-color: #B39CDB; color: #1E1626; border-color: #B39CDB; }
+#ViewToggleBtn:hover { border-color: #7B8BE0; }
 
-/* ── Inline Action Icons (Password Toggle Eye) ─────────────────── */
-QLineEdit QToolButton {
-    border: none;
-    background: transparent;
-    padding: 0px 6px;
-    color: #9C8EA9;
+/* ── Search pill ─────────────────────────────────────────────────── */
+#SearchInput, #SearchCategoryCombo {
+    background-color: #2E2238; border: 1px solid #4A3A54;
+    border-radius: 22px; padding: 10px 16px; font-size: 13px;
+    color: #B39CDB; min-height: 18px;
 }
-
-QLineEdit QToolButton:hover {
-    color: #7B8BE0;
+#SearchInput:focus, #SearchCategoryCombo:focus {
+    border: 2px solid #7B8BE0; padding: 9px 15px;
 }
-
-/* ── ComboBox dropdown ─────────────────────────────────────────── */
-QComboBox::drop-down {
-    border: none;
-    padding-right: 10px;
-}
-
-QComboBox QAbstractItemView {
-    background-color: #2E2238;
-    border: 1px solid #4A3A54;
-    border-radius: 0px;
-    color: #EDE6F2;
-    selection-background-color: #B39CDB;
-    selection-color: #1E1626;
-}
-
-/* ── Date Picker Popup ─────────────────────────────────────────── */
-QCalendarWidget QWidget {
-    background-color: #2E2238;
-    color: #EDE6F2;
-}
-
-QCalendarWidget QAbstractItemView:enabled {
-    background-color: #251A2E;
-    selection-background-color: #B39CDB;
-    selection-color: #1E1626;
-}
-
-/* ── CAPTCHA ───────────────────────────────────────────────────── */
-#CaptchaImage {
-    background-color: #251A2E;
-    border: 1px solid #4A3A54;
-    border-radius: 0px;
-}
-
-#CaptchaRefreshBtn {
-    background-color: #251A2E;
-    color: #EDE6F2;
-    border: 1px solid #4A3A54;
-    border-radius: 0px;
-    padding: 0px;
-    font-size: 16px;
-}
-
-#CaptchaRefreshBtn:hover {
-    background-color: #352543;
-    border: 1px solid #7B8BE0;
-}
-
-#CaptchaRefreshBtn:focus {
-    border: 2px solid #7B8BE0;
-    padding: 0px;
-}
-
-/* ── Push Buttons (defaults) ───────────────────────────────────── */
-QPushButton {
-    background-color: transparent;
-    color: #EDE6F2;
-    border: none;
-    padding: 8px 16px;
-    font-size: 14px;
-    border-radius: 0px;
-}
-
-QPushButton:hover {
-    background-color: rgba(179, 156, 219, 0.12);
-}
-
-QPushButton:focus {
-    border: 2px solid #7B8BE0;
-    padding: 6px 14px;
-}
-
-QPushButton::menu-indicator {
-    image: none;
-    width: 0px;
-}
-
-/* ── Primary / Secondary Buttons ───────────────────────────────── */
-#PrimaryBtn {
-    background-color: #B39CDB;
-    color: #1E1626;
-    font-size: 14px;
-    font-weight: bold;
-    border-radius: 0px;
-    padding: 14px;
-    border: none;
-}
-
-#PrimaryBtn:hover {
-    background-color: #C9B4EC;
-}
-
-#PrimaryBtn:focus {
-    border: 2px solid #F5F0EE;
-    padding: 12px;
-}
-
-#SecondaryBtn {
-    background-color: transparent;
-    color: #9C8EA9;
-    border: none;
-    font-size: 13px;
-}
-
-#SecondaryBtn:hover {
-    background-color: transparent;
-    color: #7B8BE0;
-}
-
-#SecondaryBtn:focus {
-    border: 2px solid #7B8BE0;
-    padding: 6px 14px;
-}
-
-/* ── Menus ─────────────────────────────────────────────────────── */
-QMenu {
-    background-color: #2E2238;
-    border: 1px solid #4A3A54;
-    border-radius: 0px;
-    color: #EDE6F2;
-}
-
-QMenu::item {
-    padding: 8px 20px;
-    background-color: transparent;
-}
-
-QMenu::item:selected {
-    background-color: #B39CDB;
-    color: #1E1626;
-}
-
-/* ── Scrollbars ────────────────────────────────────────────────── */
-QScrollBar:vertical {
-    background: transparent;
-    width: 10px;
-    margin: 0px;
-}
-
-QScrollBar::handle:vertical {
-    background: #6B5B77;
-    min-height: 32px;
-    border-radius: 0px;
-}
-
-QScrollBar::handle:vertical:hover {
-    background: #B39CDB;
-}
-
-QScrollBar:horizontal {
-    background: transparent;
-    height: 10px;
-    margin: 0px;
-}
-
-QScrollBar::handle:horizontal {
-    background: #6B5B77;
-    min-width: 32px;
-    border-radius: 0px;
-}
-
-QScrollBar::handle:horizontal:hover {
-    background: #B39CDB;
-}
-
-QScrollBar::add-line, QScrollBar::sub-line {
-    width: 0px;
-    height: 0px;
-}
-
-QScrollBar::add-page, QScrollBar::sub-page {
-    background: none;
-}
-
-/* ── Nav bar button tweaks ─────────────────────────────────────── */
-#NavBar QPushButton {
-    color: #EDE6F2;
-}
-
-#NavBar QPushButton:hover {
-    background-color: rgba(179, 156, 219, 0.12);
-}
-
-/* ── Registration page backdrop ────────────────────────────────── */
-#RegisterScroll,
-#RegisterScroll > QWidget#qt_scrollarea_viewport,
-#RegisterScrollContent {
-    background-color: #1E1626;
-    border: none;
-}
-
-/* ── Text styling ──────────────────────────────────────────────── */
-#InstructionText {
-    color: #EDE6F2;
-    font-size: 16px;
-    font-weight: 600;
-    font-family: "Segoe UI", "SF Pro Display", Arial, sans-serif;
-}
-
-/* ==========================================================================
-   SEARCH BAR — rounded pill
-   ========================================================================== */
-#SearchBar {
-    background-color: #261C2E;
-    border-bottom: 1px solid #4A3A54;
-    padding: 4px 0;
-}
-
-#SearchInput {
-    background-color: #251A2E;
-    border: 1px solid #4A3A54;
-    border-radius: 22px;
-    padding: 10px 16px;
-    font-size: 13px;
-    color: #EDE6F2;
-    min-height: 18px;
-    selection-background-color: #B39CDB;
-    selection-color: #1E1626;
-}
-
-#SearchInput:focus {
-    border: 2px solid #7B8BE0;
-    padding: 9px 15px;
-    background-color: #352543;
-}
-
-#SearchCategoryCombo {
-    background-color: #251A2E;
-    border: 1px solid #4A3A54;
-    border-radius: 22px;
-    padding: 10px 34px 10px 16px;
-    font-size: 13px;
-    color: #EDE6F2;
-    min-height: 18px;
-    min-width: 130px;
-}
-
-#SearchCategoryCombo:hover {
-    border: 1px solid #7B8BE0;
-}
-
-#SearchCategoryCombo:focus {
-    border: 2px solid #7B8BE0;
-    padding: 9px 33px 9px 15px;
-}
-
-#SearchCategoryCombo::drop-down {
-    border: none;
-    width: 26px;
-    subcontrol-origin: padding;
-    subcontrol-position: center right;
-}
-
-#SearchCategoryCombo::down-arrow {
-    image: none;
-    width: 0;
-    height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid #C7B9D4;
-    margin-right: 12px;
-}
-
 #SearchCategoryCombo QAbstractItemView {
-    background-color: #2E2238;
-    border: 1px solid #4A3A54;
-    border-radius: 12px;
-    padding: 6px;
-    outline: none;
-    color: #EDE6F2;
-    selection-background-color: #B39CDB;
-    selection-color: #1E1626;
+    background-color: #2E2238; border: 1px solid #4A3A54;
+    border-radius: 12px; color: #B39CDB;
+    selection-background-color: #B39CDB; selection-color: #1E1626;
 }
 
-#SearchBtn {
-    background-color: #B39CDB;
-    color: #1E1626;
-    border: none;
-    border-radius: 22px;
-    padding: 11px 24px;
-    font-size: 13px;
-    font-weight: bold;
-}
-
-#SearchBtn:hover {
-    background-color: #C9B4EC;
-}
-
-#SearchBtn:pressed {
-    background-color: #9A7FC7;
-}
-
-#SearchBtn:focus {
-    border: 2px solid #F5F0EE;
-    padding: 9px 22px;
-}
-
-#SearchBtn:disabled {
-    background-color: #3A2C43;
-    color: #6B5B77;
-}
-
-QListWidget#SearchSuggestions {
-    background-color: #2E2238;
-    border: 1px solid #4A3A54;
-    border-radius: 12px;
-    padding: 6px;
-    outline: none;
-    font-size: 13px;
-    color: #EDE6F2;
-}
-
-QListWidget#SearchSuggestions::item {
-    padding: 8px 12px;
-    border-radius: 8px;
-}
-
-QListWidget#SearchSuggestions::item:hover {
-    background-color: rgba(123, 139, 224, 40);
-}
-
-QListWidget#SearchSuggestions::item:selected {
-    background-color: #B39CDB;
-    color: #1E1626;
-}
-
-/* ==========================================================================
-   HOME SCROLL AREA
-   ========================================================================== */
-#HomeScrollArea,
-#HomeScrollArea > QWidget#qt_scrollarea_viewport,
-#HomeScrollContent {
-    background-color: #1E1626;
-    border: none;
-}
-
-#VolunteerDashboard {
-    background-color: #1E1626;
-    color: #EDE6F2;
-}
-
-#VolunteerDashboard QLabel {
-    color: #EDE6F2;
-}
-
-#VolunteerDashboard #EventCard {
-    background-color: #2E2238;
-    border: 1px solid #4A3A54;
-    border-top: 4px solid #7B8BE0;
-}
-
-#VolunteerDashboard #EventCard:hover {
-    border: 1px solid #7B8BE0;
-    border-top: 4px solid #7B8BE0;
-}
-
-#VolunteerDashboard #EventTitleList {
-    color: #EDE6F2;
-}
-
-#VolunteerDashboard #EventMetaValue {
-    color: #C7B9D4;
-    font-weight: normal;
-}
-
-#VolunteerDashboard #FormSubtitle {
-    color: #9C8EA9;
-}
-
-#SectionTitle {
+/* ── Badges / typography ─────────────────────────────────────────── */
+#FormTitle, #FAQTitle, #VolunteerTitle, #SectionTitle, #OpportunityRowTitle,
+#HeroMissionTitle, #VolunteerDashboard #EventTitleList {
     font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
-    font-size: 26px;
-    font-weight: bold;
-    color: #EDE6F2;
+    font-weight: bold; color: #B39CDB;
+}
+#FormTitle { font-size: 30px; } #FAQTitle { font-size: 26px; }
+#SectionTitle { font-size: 26px; } #VolunteerTitle { font-size: 24px; padding-left: 10px; }
+#OpportunityRowTitle { font-size: 16px; }
+#HeroMissionTitle { font-size: 84px; font-weight: 900; letter-spacing: -2px; }
+
+#FormSubtitle, #SloganText, #VolunteerResultsCount, #EventOrg,
+#VolunteerEmpty, #OpportunityEmpty, #FAQNoResults, #EventMetaKey,
+#VolunteerDashboard #EventMetaValue, #VolunteerDashboard #FormSubtitle {
+    color: #4A3A54; font-size: 13px;
+}
+#VolunteerEmpty, #OpportunityEmpty, #FAQNoResults { font-style: italic; font-size: 15px; }
+
+#FieldLabel, #FilterLabel { color: #B39CDB; font-size: 12px; font-weight: bold; }
+#EventTitle, #EventTitleList { color: #B39CDB; font-weight: bold; }
+#EventTitle { font-size: 15px; } #EventTitleList { font-size: 17px; }
+#EventDescription, #DetailsDescription { font-size: 12px; color: #B39CDB; }
+#EventMetaValue { font-size: 12px; color: #B39CDB; font-weight: bold; }
+
+#EventCategoryBadge, #EventStatusBadge, #EventSourceMoxie {
+    background-color: #7B8BE0; color: #1E1626;
+    font-size: 10px; font-weight: 700; padding: 4px 10px;
+    border-radius: 9px;
+}
+#EventStatusBadge, #EventSourceMoxie { background-color: #B39CDB; color: #1E1626; }
+#EventLocationBadge, #EventSourceExternal {
+    background: transparent; color: #4A3A54;
+    border: 1px solid #4A3A54; padding: 3px 8px;
+    font-size: 10px; font-weight: 700; border-radius: 9px;
 }
 
+/* ── Open Details + Bookmark ─────────────────────────────────────── */
+#EventDetailsBtn {
+    background-color: #7B8BE0; color: #1E1626;
+    border: none; border-radius: 0px;
+    padding: 6px 16px; font-size: 12px; font-weight: 700;
+    min-height: 34px;
+}
+#EventDetailsBtn:hover  { background-color: #B39CDB; }
+#EventDetailsBtn:pressed{ background-color: #B39CDB; }
+#EventDetailsBtn:focus  { border: 2px solid #B39CDB; }
+
+#EventBookmarkBtn {
+    background-color: #2E2238; color: #4A3A54;
+    border: 1px solid #4A3A54; font-size: 18px;
+    padding: 0; border-radius: 0px;
+}
+#EventBookmarkBtn:hover  { color: #7B8BE0; border-color: #7B8BE0; }
+#EventBookmarkBtnOn {
+    background-color: #7B8BE0; color: #1E1626;
+    border: none; font-size: 18px; padding: 0; border-radius: 0px;
+}
+#EventBookmarkBtnOn:hover { background-color: #B39CDB; }
+
+/* ── Match / clusters / QR / nav groups ─────────────────────────── */
+#MatchStepTitle { font-size: 20px; font-weight: bold; color: #B39CDB; }
+#MatchChip, #ClusterChip {
+    background-color: #2E2238; color: #B39CDB;
+    border: 1px solid #4A3A54; padding: 8px 14px;
+    font-size: 13px; border-radius: 0px;
+}
+#MatchChip:hover, #ClusterChip:hover { border-color: #7B8BE0; }
+#MatchChip:checked, #ClusterChip:checked,
+#MatchChipChecked, #ClusterChipChecked {
+    background-color: #B39CDB; color: #1E1626; border-color: #B39CDB;
+}
+#EventQrDialog { background-color: #2E2238; border-top: 4px solid #7B8BE0; }
+#EventQrImage  { background-color: #2E2238; border: 1px solid #4A3A54; }
+#EventQrStatus { font-size: 14px; font-weight: bold; color: #B39CDB; }
+#EventQrWindow { font-size: 12px; color: #4A3A54; }
+#NavGroupBtn { color: #B39CDB; padding: 8px 14px; font-weight: 600; }
+#NavGroupBtn:hover, #NavGroupBtn:checked { background-color: rgba(179,156,219,0.12); }
+
+/* ── Scrollbars ──────────────────────────────────────────────────── */
+QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
+QScrollBar::handle:vertical { background: #4A3A54; min-height: 32px; }
+QScrollBar::handle:vertical:hover { background: #B39CDB; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 0; }
+QScrollBar::handle:horizontal { background: #4A3A54; min-width: 32px; }
+QScrollBar::handle:horizontal:hover { background: #B39CDB; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+
+/* ── Chat / mic ──────────────────────────────────────────────────── */
+#ChatView, #ChatScrollArea, #ChatScrollArea > QWidget#qt_scrollarea_viewport,
+#ChatTranscript { background: transparent; border: none; }
+#ChatComposer { background-color: #2E2238; border: 1px solid #4A3A54; border-radius: 24px; }
+QLineEdit#ChatInput { background: transparent; border: none; color: #B39CDB; }
+QPushButton#ChatIconButton { background-color: #B39CDB; color: #1E1626;
+                             border: 1px solid #7B8BE0; border-radius: 20px; }
+QPushButton#ChatIconButton:hover { background-color: #7B8BE0; }
+QPushButton#ChatIconButton:checked { background-color: #E74C3C; color: #F5F0EE; }
+QLabel#ChatUserBubbleFirst, QLabel#ChatUserBubbleGrouped {
+    background-color: #7B8BE0; color: #1E1626; padding: 8px 12px; font-size: 13px;
+}
+QLabel#ChatUserBubbleFirst {
+    border-top-left-radius: 16px; border-top-right-radius: 16px;
+    border-bottom-right-radius: 4px; border-bottom-left-radius: 16px;
+}
+QLabel#ChatUserBubbleGrouped { border-radius: 16px; }
+QLabel#ChatAssistantBubbleFirst, QLabel#ChatAssistantBubbleGrouped,
+QLabel#ChatTypingBubble {
+    background-color: #2E2238; color: #B39CDB;
+    border: 1px solid #4A3A54; padding: 8px 12px; font-size: 13px;
+}
+QLabel#ChatAssistantBubbleFirst, QLabel#ChatTypingBubble {
+    border-top-left-radius: 4px; border-top-right-radius: 16px;
+    border-bottom-right-radius: 16px; border-bottom-left-radius: 16px;
+}
+QLabel#ChatAssistantBubbleGrouped { border-radius: 16px; }
+QLabel#ChatTypingBubble { color: #4A3A54; padding: 8px 14px; font-size: 11px; }
+QLabel#ChatAvatar { background-color: #B39CDB; color: #1E1626;
+                    border-radius: 14px; font-size: 13px; font-weight: bold; }
+QLabel#ChatTimestamp, QLabel#ChatDateLabel { color: #4A3A54; padding: 0 6px; }
+QLabel#ChatTimestamp { font-size: 10px; }
+QLabel#ChatDateLabel { font-size: 11px; font-weight: 600; }
+QFrame#ChatDateRule { color: #4A3A54; }
+
+QPushButton#GlobalMic { background: #B39CDB; color: #1E1626;
+                        border: none; border-radius: 22px; font-size: 18px; }
+QPushButton#GlobalMic:hover { background: #7B8BE0; }
+QPushButton#GlobalMic[listening="true"] { background: #E74C3C; font-size: 20px; }
 /* ==========================================================================
-   FEATURES SECTION
-   ========================================================================== */
-#FeaturesSection {
-    background-color: #1E1626;
-}
-
-#FeatureCard {
-    background-color: #2E2238;
-    border: 1px solid #4A3A54;
-    border-top: 4px solid #7B8BE0;
-    border-radius: 0px;
-}
-
-#FeatureImage {
-    background-color: #251A2E;
-    border: 1px solid #4A3A54;
-    color: #9C8EA9;
-    font-size: 13px;
-}
-
-#FeatureTitle {
-    font-size: 17px;
-    font-weight: bold;
-    color: #EDE6F2;
-}
-
-#FeatureDesc {
-    font-size: 13px;
-    color: #C7B9D4;
-}
-
-/* ==========================================================================
-   OPPORTUNITIES SECTION
-   ========================================================================== */
-#OpportunitiesSection {
-    background-color: #1E1626;
-}
-
-#OpportunityRowTitle {
-    font-size: 16px;
-    font-weight: bold;
-    color: #EDE6F2;
-    padding-left: 2px;
-}
-
-#OpportunityScroll,
-#OpportunityScroll > QWidget#qt_scrollarea_viewport,
-#OpportunityScrollContent {
-    background-color: transparent;
-    border: none;
-}
-
-#OpportunityEmpty {
-    color: #9C8EA9;
-    font-size: 13px;
-    font-style: italic;
-    padding: 10px 2px;
-}
-
-/* ==========================================================================
-   FAQ PAGE
+   FAQ — Bolt-inspired redesign (dark)
    ========================================================================== */
 #FAQPage,
 #FAQScrollArea,
@@ -589,629 +252,356 @@ QListWidget#SearchSuggestions::item:selected {
 
 #FAQTitle {
     font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
-    font-size: 26px;
-    font-weight: bold;
+    font-size: 44px;
+    font-weight: 900;
     color: #EDE6F2;
+    letter-spacing: -0.5px;
+    padding: 8px 0 6px 0;
+}
+
+#FAQSubtitle {
+    font-size: 14px;
+    color: #C7B9D4;
+    padding: 0 60px;
 }
 
 #FAQSearchInput {
-    background-color: #251A2E;
+    background-color: #2E2238;
     border: 1px solid #4A3A54;
-    border-radius: 0px;
-    padding: 12px 14px;
-    font-size: 14px;
+    border-radius: 22px;
+    padding: 12px 20px;
+    font-size: 13px;
     color: #EDE6F2;
+    min-height: 18px;
+    selection-background-color: #B39CDB;
+    selection-color: #1E1626;
 }
-
 #FAQSearchInput:focus {
     border: 2px solid #7B8BE0;
-    padding: 11px 13px;
+    padding: 11px 19px;
     background-color: #352543;
+}
+
+#FAQCatPill {
+    background-color: transparent;
+    color: #C7B9D4;
+    border: 1px solid #4A3A54;
+    border-radius: 18px;
+    padding: 6px 18px;
+    font-size: 12px;
+    font-weight: 600;
+}
+#FAQCatPill:hover {
+    border-color: #7B8BE0;
+    color: #EDE6F2;
+}
+#FAQCatPill:checked {
+    background-color: #B39CDB;
+    color: #1E1626;
+    border-color: #B39CDB;
+}
+#FAQCatPill:focus {
+    border: 2px solid #7B8BE0;
+}
+
+#FAQCategoryHeading {
+    font-family: "Segoe UI", "SF Pro Display", Arial, sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    color: #EDE6F2;
+    padding: 20px 0 4px 0;
+    background: transparent;
+    border: none;
 }
 
 #FAQItem {
     background-color: #2E2238;
     border: 1px solid #4A3A54;
-    border-left: 4px solid #7B8BE0;
-    border-radius: 0px;
+    border-radius: 12px;
+    min-height: 60px;
+}
+#FAQItem:hover {
+    border-color: #7B8BE0;
+}
+
+#FAQHeader {
+    background: transparent;
+    border: none;
 }
 
 #FAQQuestion {
-    font-size: 15px;
-    font-weight: bold;
+    font-size: 14px;
+    font-weight: 700;
     color: #EDE6F2;
+    padding: 6px 0;
+    background: transparent;
+    border: none;
 }
 
 #FAQAnswer {
     font-size: 13px;
     color: #C7B9D4;
-    padding-top: 6px;
+    padding: 14px 0 2px 0;
+    margin-top: 8px;
     border-top: 1px solid #4A3A54;
+    background: transparent;
 }
 
 #FAQToggleBtn {
-    background-color: #251A2E;
-    color: #EDE6F2;
-    border: 1px solid #4A3A54;
-    font-size: 16px;
-    font-weight: bold;
-    padding: 2px 0px;
-    border-radius: 0px;
+    background-color: #B39CDB;
+    color: #1E1626;
+    border: none;
+    border-radius: 16px;
+    font-size: 20px;
+    font-weight: 600;
+    padding: 0;
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
 }
-
 #FAQToggleBtn:hover {
-    background-color: #352543;
-    border-color: #7B8BE0;
+    background-color: #7B8BE0;
 }
-
+#FAQToggleBtn[expanded="true"] {
+    background-color: #7B8BE0;
+}
 #FAQToggleBtn:focus {
     border: 2px solid #7B8BE0;
-    padding: 1px 0px;
 }
 
 #FAQNoResults {
     color: #9C8EA9;
     font-size: 14px;
     font-style: italic;
-    padding: 20px 0px;
+    padding: 40px 0;
 }
-
 /* ==========================================================================
-   VOLUNTEER PAGE
+   VOLUNTEER PAGE — sidebar + redesigned cards (dark)
    ========================================================================== */
-#VolunteerPage,
-#VolunteerScroll,
-#VolunteerScroll > QWidget#qt_scrollarea_viewport,
-#VolunteerGridContainer,
-#VolunteerListContainer,
-#VolunteerContentStack,
-#VolunteerEmptyWrap {
+
+#EventMainArea {
     background-color: #1E1626;
     border: none;
 }
 
-#VolunteerHeader {
+#FilterSidebar {
     background-color: #2A1F33;
-    border-bottom: 1px solid #4A3A54;
+    border-right: 1px solid #4A3A54;
 }
 
-#VolunteerTitle {
-    font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
-    font-size: 24px;
-    font-weight: bold;
-    color: #EDE6F2;
-    padding-left: 10px;
-}
-
-#VolunteerBackBtn {
-    background-color: transparent;
-    color: #EDE6F2;
-    font-size: 14px;
-    font-weight: bold;
-    padding: 8px 14px;
-    border: 1px solid #4A3A54;
-}
-#VolunteerBackBtn:hover {
-    background-color: rgba(179, 156, 219, 0.12);
-}
-#VolunteerBackBtn:focus {
-    border: 2px solid #7B8BE0;
-    padding: 7px 13px;
-}
-
-#ViewToggleBtn {
-    background-color: #251A2E;
-    color: #EDE6F2;
-    border: 1px solid #4A3A54;
-    padding: 8px 16px;
-    font-size: 13px;
-    font-weight: bold;
-}
-#ViewToggleBtn:checked {
-    background-color: #B39CDB;
-    color: #1E1626;
-    border: 1px solid #B39CDB;
-}
-#ViewToggleBtn:hover {
-    border: 1px solid #7B8BE0;
-}
-#ViewToggleBtn:focus {
-    border: 2px solid #7B8BE0;
-    padding: 7px 15px;
-}
-
-#VolunteerResultsCount {
-    font-size: 13px;
-    color: #C7B9D4;
-    font-style: italic;
-}
-
-#VolunteerEmpty {
-    font-size: 15px;
-    color: #9C8EA9;
-    font-style: italic;
-}
-
-#VolunteerEmptyBtn {
-    background-color: #B39CDB;
-    color: #1E1626;
-    font-size: 13px;
-    font-weight: bold;
-    padding: 10px 22px;
+#FilterSidebarScroll,
+#FilterSidebarScroll > QWidget#qt_scrollarea_viewport,
+#FilterSidebarContent {
+    background-color: #2A1F33;
     border: none;
 }
-#VolunteerEmptyBtn:hover {
-    background-color: #C9B4EC;
-}
-#VolunteerEmptyBtn:focus {
-    border: 2px solid #F5F0EE;
-    padding: 8px 20px;
-}
 
-/* ── Filter bar ────────────────────────────────────────────────── */
-#FilterBar {
-    background-color: #261C2E;
-    border-bottom: 1px solid #4A3A54;
-}
-
-#FilterMoreRow {
-    background-color: transparent;
-}
-
-#FilterLabel {
-    font-size: 13px;
-    font-weight: bold;
+#FilterSidebarHeading {
+    font-size: 11px;
+    font-weight: 800;
     color: #C7B9D4;
+    letter-spacing: 1.2px;
+    padding-top: 6px;
+    background: transparent;
 }
 
-#FilterSearchInput,
-#FilterLocationInput,
-#FilterCombo,
-#FilterDate {
-    background-color: #251A2E;
+#FilterSidebarInput {
+    background-color: #2E2238;
     border: 1px solid #4A3A54;
-    border-radius: 0px;
+    border-radius: 10px;
     padding: 9px 12px;
     font-size: 13px;
     color: #EDE6F2;
     min-height: 18px;
 }
-#FilterSearchInput:focus,
-#FilterLocationInput:focus,
-#FilterCombo:focus,
-#FilterDate:focus {
+#FilterSidebarInput:focus {
     border: 2px solid #7B8BE0;
     padding: 8px 11px;
     background-color: #352543;
 }
+#FilterSidebarInput::drop-down { border: none; padding-right: 8px; }
 
-#FilterClearBtn,
-#FilterMoreBtn,
-#DetailsCloseBtn {
-    background-color: transparent;
-    color: #C7B9D4;
-    border: 1px solid #4A3A54;
-    padding: 8px 14px;
+#FilterSidebarRadio,
+#FilterSidebarCheck {
     font-size: 13px;
-}
-#FilterClearBtn:hover,
-#FilterMoreBtn:hover,
-#DetailsCloseBtn:hover {
-    background-color: #352543;
-    color: #7B8BE0;
-    border-color: #7B8BE0;
-}
-#FilterMoreBtn:checked {
-    background-color: #352543;
     color: #EDE6F2;
+    background: transparent;
+    padding: 3px 0;
+    spacing: 8px;
+}
+#FilterSidebarRadio::indicator,
+#FilterSidebarCheck::indicator {
+    width: 16px; height: 16px;
+    border: 1px solid #4A3A54;
+    background-color: #2E2238;
+}
+#FilterSidebarRadio::indicator { border-radius: 8px; }
+#FilterSidebarCheck::indicator { border-radius: 4px; }
+#FilterSidebarRadio::indicator:hover,
+#FilterSidebarCheck::indicator:hover {
     border-color: #7B8BE0;
 }
-#FilterClearBtn:focus,
-#FilterMoreBtn:focus,
-#DetailsCloseBtn:focus {
-    border: 2px solid #7B8BE0;
-    padding: 7px 13px;
+#FilterSidebarRadio::indicator:checked,
+#FilterSidebarCheck::indicator:checked {
+    background-color: #B39CDB;
+    border-color: #B39CDB;
 }
 
-/* ==========================================================================
-   EVENT CARD (grid + list)
-   ========================================================================== */
+#FilterSidebarClear {
+    background-color: #B39CDB;
+    color: #1E1626;
+    border: none;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    margin: 12px;
+    border-radius: 10px;
+}
+#FilterSidebarClear:hover { background-color: #7B8BE0; }
+
+#EventCardBody { background: transparent; border: none; }
+
+#EventClusterChip {
+    background-color: #7B8BE0;
+    color: #1E1626;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    padding: 4px 10px;
+    border-radius: 10px;
+    max-width: 220px;
+}
+
+#EventCardMetaIcon {
+    font-size: 10px;
+    font-weight: 800;
+    color: #4A3A54;
+    letter-spacing: 1px;
+}
+
 #EventCard {
     background-color: #2E2238;
-    border: 1px solid #3A2C43;
-    border-radius: 0px;
+    border: 1px solid #4A3A54;
+    border-radius: 16px;
 }
-#EventCard:hover {
-    border: 1px solid #7B8BE0;
-}
+#EventCard:hover { border-color: #7B8BE0; }
 
 #EventCardMoxie {
     background-color: #2E2238;
-    border: 2px solid #7B8BE0;
-    border-radius: 0px;
+    border: 1px solid #7B8BE0;
+    border-radius: 16px;
 }
-#EventCardMoxie:hover {
-    border: 2px solid #93A2F0;
-}
+#EventCardMoxie:hover { border-color: #B39CDB; }
 
 #EventThumb {
     background-color: #251A2E;
-    border: none;
     color: #9C8EA9;
     font-size: 12px;
-}
-
-#EventCategoryBadge {
-    background-color: #7B8BE0;
-    color: #1E1626;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 4px 10px;
-}
-
-#EventLocationBadge {
-    background-color: transparent;
-    color: #C7B9D4;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 3px 8px;
-    border: 1px solid #4A3A54;
-}
-
-#EventStatusBadge {
-    background-color: #B39CDB;
-    color: #1E1626;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 4px 8px;
-}
-
-#EventTitle {
-    font-size: 15px;
-    font-weight: bold;
-    color: #EDE6F2;
-}
-
-#EventTitleList {
-    font-size: 17px;
-    font-weight: bold;
-    color: #EDE6F2;
-}
-
-#EventOrg {
-    font-size: 12px;
-    color: #9C8EA9;
-    font-style: italic;
-}
-
-#EventDescription {
-    font-size: 12px;
-    color: #C7B9D4;
-}
-
-#EventMetaKey {
-    font-size: 12px;
-    color: #9C8EA9;
-    font-weight: bold;
-}
-
-#EventMetaValue {
-    font-size: 12px;
-    color: #EDE6F2;
-    font-weight: bold;
-}
-
-#EventLinkBtn {
-    background-color: #B39CDB;
-    color: #1E1626;
-    font-size: 12px;
-    font-weight: bold;
-    border: none;
-    padding: 9px 14px;
-}
-#EventLinkBtn:hover {
-    background-color: #C9B4EC;
-}
-#EventLinkBtn:disabled {
-    background-color: #3A2C43;
-    color: #6B5B77;
-}
-#EventLinkBtn:focus {
-    border: 2px solid #F5F0EE;
-    padding: 7px 12px;
-}
-
-#EventRsvpBtn {
-    background-color: #7B8BE0;
-    color: #F5F0EE;
-    font-size: 12px;
-    font-weight: bold;
-    border: none;
-    padding: 9px 14px;
-}
-#EventRsvpBtn:hover {
-    background-color: #93A2F0;
-}
-#EventRsvpBtn:disabled {
-    background-color: #3A2C43;
-    color: #6B5B77;
-}
-#EventRsvpBtn:focus {
-    border: 2px solid #F5F0EE;
-    padding: 7px 12px;
-}
-
-/* ── Event details dialog ─────────────────────────────────────── */
-#EventDetailsDialog {
-    background-color: #2E2238;
-    border: 1px solid #4A3A54;
-    border-top: 4px solid #7B8BE0;
-    border-radius: 0px;
-}
-
-#DetailsScroll,
-#DetailsScroll > QWidget#qt_scrollarea_viewport,
-#DetailsScrollContent {
-    background-color: transparent;
-    border: none;
-}
-
-#DetailsDescription {
-    font-size: 13px;
-    color: #C7B9D4;
-}
-
-/* ==========================================================================
-   GLOBAL MICROPHONE BUTTON
-   ========================================================================== */
-QPushButton#GlobalMic {
-    background: #B39CDB;
-    color: #1E1626;
-    border: none;
-    border-radius: 22px;
-    font-size: 18px;
-}
-
-QPushButton#GlobalMic:hover {
-    background: #C9B4EC;
-}
-
-QPushButton#GlobalMic:pressed {
-    background: #9A7FC7;
-}
-
-QPushButton#GlobalMic[listening="true"] {
-    background: #E74C3C;
-    font-size: 20px;
-}
-QMessageBox {
-        background-color: #1E1626;
-    }
-QWidget#LoginCard {
-    background-color: #2E2238; /* Change to your desired background color */        /* Optional: if you want rounded corners */
-}
-QDialog {
-    background-color: #2E2238;
-}
-
-/* ── Chat widget ───────────────────────────────────────────────── */
-#ChatView,
-#ChatScrollArea,
-#ChatScrollArea > QWidget#qt_scrollarea_viewport,
-#ChatTranscript {
-    background-color: transparent;
-    border: none;
-}
-
-#ChatComposer {
-    background-color: #251A2E;
-    border: 1px solid #4A3A54;
-    border-radius: 24px;
-}
-
-QLineEdit#ChatInput {
-    background: transparent;
-    border: none;
-    color: #EDE6F2;
-    selection-background-color: #B39CDB;
-    selection-color: #1E1626;
-}
-
-QPushButton#ChatIconButton {
-    background-color: #B39CDB;
-    color: #1E1626;
-    border: 1px solid #7B8BE0;
-}
-
-QPushButton#ChatIconButton:hover {
-    background-color: #C9B4EC;
-}
-
-QPushButton#ChatIconButton:pressed {
-    background-color: #9A7FC7;
-}
-
-QPushButton#ChatIconButton:checked {
-    background-color: #E74C3C;
-    color: #F5F0EE;
-}
-
-QLabel#ChatUserBubbleFirst,
-QLabel#ChatUserBubbleGrouped {
-    background-color: #7B8BE0;
-    color: #1E1626;
-    padding: 8px 12px;
-    font-size: 13px;
-}
-
-QLabel#ChatUserBubbleFirst {
     border-top-left-radius: 16px;
     border-top-right-radius: 16px;
-    border-bottom-right-radius: 4px;
-    border-bottom-left-radius: 16px;
 }
 
-QLabel#ChatUserBubbleGrouped {
-    border-radius: 16px;
+#EventTitle { font-size: 16px; font-weight: 800; color: #EDE6F2; }
+#EventTitleList { font-size: 18px; font-weight: 800; color: #EDE6F2; }
+#EventOrg { font-size: 12px; color: #9C8EA9; }
+#EventDescription { font-size: 12px; color: #C7B9D4; }
+#EventMetaValue { font-size: 12px; color: #EDE6F2; font-weight: 600; }
+#EventMetaKey {
+    font-size: 10px; color: #4A3A54;
+    font-weight: 700; letter-spacing: 1px;
 }
 
-QLabel#ChatAssistantBubbleFirst,
-QLabel#ChatAssistantBubbleGrouped,
-QLabel#ChatTypingBubble {
-    background-color: #2E2238;
-    color: #EDE6F2;
-    border: 1px solid #4A3A54;
-    padding: 8px 12px;
-    font-size: 13px;
+#EventDetailsBtn {
+    background-color: #7B8BE0; color: #1E1626;
+    border: none; border-radius: 10px;
+    padding: 10px 16px; font-size: 12px; font-weight: 700;
+}
+#EventDetailsBtn:hover  { background-color: #B39CDB; }
+#EventDetailsBtn:pressed{ background-color: #B39CDB; }
+
+#EventRsvpBtn {
+    background-color: #B39CDB; color: #1E1626;
+    border: none; border-radius: 10px;
+    padding: 10px 16px; font-size: 12px; font-weight: 700;
+}
+#EventRsvpBtn:hover { background-color: #7B8BE0; }
+#EventRsvpBtn:disabled { background-color: #4A3A54; color: #2E2238; }
+
+#EventLinkBtn {
+    background-color: transparent; color: #B39CDB;
+    border: 1px solid #4A3A54; border-radius: 10px;
+    padding: 10px 16px; font-size: 12px; font-weight: 700;
+}
+#EventLinkBtn:hover { border-color: #7B8BE0; color: #7B8BE0; }
+#EventLinkBtn:disabled { color: #4A3A54; }
+
+#EventBookmarkBtn {
+    background-color: transparent; color: #4A3A54;
+    border: 1px solid #4A3A54; border-radius: 10px;
+    font-size: 18px; padding: 0;
+}
+#EventBookmarkBtn:hover { color: #7B8BE0; border-color: #7B8BE0; }
+#EventBookmarkBtnOn {
+    background-color: #7B8BE0; color: #1E1626;
+    border: none; border-radius: 10px; font-size: 18px; padding: 0;
 }
 
-QLabel#ChatAssistantBubbleFirst,
-QLabel#ChatTypingBubble {
-    border-top-left-radius: 4px;
-    border-top-right-radius: 16px;
-    border-bottom-right-radius: 16px;
-    border-bottom-left-radius: 16px;
+#EventSourceMoxie {
+    background-color: #B39CDB; color: #1E1626;
+    font-size: 10px; font-weight: 700;
+    padding: 4px 10px; border-radius: 10px;
 }
-
-QLabel#ChatAssistantBubbleGrouped {
-    border-radius: 16px;
-}
-
-QLabel#ChatTypingBubble {
+#EventSourceExternal {
+    background-color: rgba(46, 34, 56, 0.9);
     color: #C7B9D4;
-    padding: 8px 14px;
-    font-size: 11px;
+    border: 1px solid #4A3A54;
+    font-size: 10px; font-weight: 700;
+    padding: 3px 9px; border-radius: 10px;
 }
 
-QLabel#ChatAvatar {
+#VolunteerResultsCount {
+    font-size: 12px; color: #9C8EA9; letter-spacing: 0.4px;
+}
+/* ==========================================================================
+   HERO — editorial split-panel
+   ========================================================================== */
+#HeroSection {
+    background-color: #1E1626;
+}
+
+#HeroLeftPanel {
+    background-color: #2A1F33;
+}
+
+#HeroRightPanel {
+    background-color: #1E1626;
+}
+
+#HeroBottomBar {
     background-color: #B39CDB;
-    color: #1E1626;
-    border-radius: 14px;
-    font-size: 13px;
-    font-weight: bold;
 }
 
-QLabel#ChatTimestamp,
-QLabel#ChatDateLabel {
-    color: #9C8EA9;
-    padding: 0 6px;
+#HeroWordmark {
+    padding: 0;
+    margin: 0;
 }
 
-QLabel#ChatTimestamp {
-    font-size: 10px;
-}
-
-QLabel#ChatDateLabel {
-    font-size: 11px;
-    font-weight: 600;
-}
-
-QFrame#ChatDateRule {
-    color: #4A3A54;
-}
-
-QDialog#ChatHistoryDialog,
-QListWidget#ChatHistoryList {
-    background-color: #2E2238;
+#HeroHeadline {
+    font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
+    font-size: 44px;
+    font-weight: 700;
     color: #EDE6F2;
+    line-height: 1.15em;
 }
 
-QListWidget#ChatHistoryList {
-    border: 1px solid #4A3A54;
-    selection-background-color: #B39CDB;
-    selection-color: #1E1626;
-}
-
-QLabel#ChatHistoryEmpty {
-    color: #C7B9D4;
-}
-/* ── Opportunity source badges ───────────────────────────────── */
-QLabel#EventSourceMoxie {
-    background-color: #2D1A3E;
-    color: #F5F0EE;
-    border-radius: 9px;
-    padding: 3px 10px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}
-QLabel#EventSourceExternal {
-    background-color: transparent;
-    color: #8C8C8C;
-    border: 1px solid #8C8C8C;
-    border-radius: 9px;
-    padding: 2px 9px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}
-/* ── Full-width "Open Details" button on event cards ─────────── */
-QPushButton#EventDetailsBtn {
-    background-color: transparent;
-    /*color: palette(text);*/
-    color : white;
-    border: 1px solid rgba(200, 200, 200, 70);    
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 600;
-}
-QPushButton#EventDetailsBtn:hover {
-    background-color: rgba(200, 200, 200, 30);
-    border-color: rgba(200, 200, 200, 140);
-}
-/* ── Standard back button used on every sub-page ────────────── */
-QPushButton#BackBtn {
-    background-color: #2D1A3E;
-    border: 1px solid rgba(127, 127, 127, 90);
-    border-radius: 8px;
-    padding: 6px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #F5F0EE;
-}
-QPushButton#BackBtn:hover {
-    background-color: rgba(127, 127, 127, 30);
-    border-color: rgba(127, 127, 127, 160);
-}
-QPushButton#BackBtn:pressed {
-    background-color: rgba(127, 127, 127, 60);
-}
-/* ── Mission hero typography ────────────────────────────────── */
-QLabel#HeroMissionTitle {
-    font-size: 84px;
-    font-weight: 900;
-    letter-spacing: -2px;
-    color: #2D1A3E; 
-}
-QLabel#HeroMissionBodyLg {
-    font-size: 34px;
-    font-weight: 400;
-    color: #2D1A3E; 
-}
-QLabel#HeroMissionBodyMd {
-    font-size: 22px;
-    font-weight: 400;
-    color: #2D1A3E; 
-}
-QLabel#HeroMissionBodySm {
-    font-size: 18px;
-    font-weight: 700;
-    color: #2D1A3E; 
-}
-
-/* ── Learn More button ──────────────────────────────────────── */
-QPushButton#HeroLearnBtn {
-    border: none;
-    border-radius: 8px;
+#HeroSub {
     font-size: 15px;
-    font-weight: 700;
-    background-color: #CBB9B4  /* mint pops on dark */
-    color: #1A1A1A;
+    color: #C7B9D4;
+    line-height: 1.55em;
 }
-QPushButton#HeroLearnBtn:hover {
-    background-color: #8C8C8C;
-}
-QPushButton#HeroLearnBtn:pressed {
-    background-color: #F5F0EE;
+
+#HeroPhoto {
+    background-color: #2E2238;
+    border: none;
 }

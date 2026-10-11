@@ -1,19 +1,13 @@
-"""searchBar.py - Thin bar under the nav bar.
-
-Only visible on the guest home page. Emits `searchRequested(filters)` with
-a dict shaped exactly like VolunteerPage.filter_bar expects:
-
-    {
-        "keyword":   str,
-        "location":  str,
-        "type":      "All" | "In-person" | "Remote",
-        "category":  "All Causes" | <category>,
-        "date_enabled": bool,
-        "date_from": str | "",
-        "date_to":   str | "",
-    }
 """
+searchBar.py — Thin bar under the nav bar. Only visible on the guest
+home page. Emits `searchRequested(filters)` with a dict shaped exactly
+like VolunteerPage.filter_bar expects, plus the new keys:
 
+    cluster_list : list of career cluster names (shown as "Causes")
+    zipcode      : str
+    city         : str (Georgia city or "All cities")
+    high_school  : str
+"""
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
@@ -27,6 +21,9 @@ from PyQt6.QtWidgets import (
 )
 
 import Events.theme as theme
+from Events.careerClusters import CAREER_CLUSTERS
+from Events.gaLocations import GA_CITIES, ALL_CITIES
+from Events.multiSelectCauses import MultiSelectCauses
 
 MAX_RECENTS = 6
 
@@ -34,7 +31,6 @@ MAX_RECENTS = 6
 class SearchBar(QWidget):
     searchRequested = pyqtSignal(dict)
 
-    CATEGORY_OPTIONS = ["All Causes"]        # populated from DB later
     TYPE_OPTIONS = ["All", "In-person", "Remote"]
 
     def __init__(self, parent=None):
@@ -46,21 +42,40 @@ class SearchBar(QWidget):
         layout.setContentsMargins(20, 10, 20, 10)
         layout.setSpacing(10)
 
-        # Category
-        self.categoryCombo = QComboBox()
-        self.categoryCombo.setObjectName(theme.searchCategory)
-        self.categoryCombo.addItems(self.CATEGORY_OPTIONS)
-        self.categoryCombo.setFixedWidth(160)
-        self.categoryCombo.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        # ── Causes (career clusters, multi-select) ───────────────────
+        self.causes_multi = MultiSelectCauses("All Causes")
+        self.causes_multi.set_items(CAREER_CLUSTERS)
+        self.causes_multi.setFixedWidth(190)
 
-        # Type (in-person / remote)
+        # ── Type ──────────────────────────────────────────────────────
         self.typeCombo = QComboBox()
         self.typeCombo.setObjectName(theme.searchCategory)
         self.typeCombo.addItems(self.TYPE_OPTIONS)
-        self.typeCombo.setFixedWidth(130)
-        self.typeCombo.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.typeCombo.setFixedWidth(110)
+        self.typeCombo.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
 
-        # Keyword
+        # ── City ──────────────────────────────────────────────────────
+        self.cityCombo = QComboBox()
+        self.cityCombo.setObjectName(theme.searchCategory)
+        self.cityCombo.addItem(ALL_CITIES)
+        for c in GA_CITIES:
+            self.cityCombo.addItem(c)
+        self.cityCombo.setFixedWidth(150)
+        self.cityCombo.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+
+        # ── ZIP code ──────────────────────────────────────────────────
+        self.zipcodeInput = QLineEdit()
+        self.zipcodeInput.setObjectName(theme.searchInput)
+        self.zipcodeInput.setPlaceholderText("ZIP")
+        self.zipcodeInput.setMaxLength(10)
+        self.zipcodeInput.setFixedWidth(90)
+        self.zipcodeInput.returnPressed.connect(self._emit_search)
+
+        # ── Keyword ───────────────────────────────────────────────────
         self.searchInput = QLineEdit()
         self.searchInput.setObjectName(theme.searchInput)
         self.searchInput.setPlaceholderText(
@@ -72,7 +87,9 @@ class SearchBar(QWidget):
 
         icon_path = theme.asset("search.svg")
         if os.path.exists(icon_path):
-            icon_action = QAction(QIcon(icon_path), "", self.searchInput)
+            icon_action = QAction(
+                QIcon(icon_path), "", self.searchInput
+            )
             icon_action.setEnabled(False)
             self.searchInput.addAction(
                 icon_action, QLineEdit.ActionPosition.LeadingPosition
@@ -90,26 +107,22 @@ class SearchBar(QWidget):
             self.clear_action, QLineEdit.ActionPosition.TrailingPosition
         )
 
-        # Location
-        self.locationInput = QLineEdit()
-        self.locationInput.setObjectName(theme.searchInput)
-        self.locationInput.setPlaceholderText("Location or zipcode...")
-        self.locationInput.setFixedWidth(200)
-        self.locationInput.returnPressed.connect(self._emit_search)
-
-        # Button
+        # ── Search button ─────────────────────────────────────────────
         self.searchBtn = QPushButton("Search")
         self.searchBtn.setObjectName(theme.searchBtn)
-        self.searchBtn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.searchBtn.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
         self.searchBtn.clicked.connect(self._emit_search)
 
-        layout.addWidget(self.categoryCombo)
+        layout.addWidget(self.causes_multi)
         layout.addWidget(self.typeCombo)
+        layout.addWidget(self.cityCombo)
+        layout.addWidget(self.zipcodeInput)
         layout.addWidget(self.searchInput, 1)
-        layout.addWidget(self.locationInput)
         layout.addWidget(self.searchBtn)
 
-        # Recent-searches popup
+        # ── Recent-searches popup ─────────────────────────────────────
         self.suggestions = QListWidget()
         self.suggestions.setObjectName("SearchSuggestions")
         self.suggestions.setWindowFlags(
@@ -123,7 +136,7 @@ class SearchBar(QWidget):
             QKeySequence("Ctrl+K"), self, activated=self.focus_input
         )
 
-    # ── Public API ────────────────────────────────────────────────
+    # ── Public API ────────────────────────────────────────────────────
     def focus_input(self):
         self.searchInput.setFocus()
         self.searchInput.selectAll()
@@ -133,36 +146,36 @@ class SearchBar(QWidget):
         self.searchInput.setText(text)
 
     def set_category(self, category):
-        idx = self.categoryCombo.findText(category)
-        if idx >= 0:
-            self.categoryCombo.setCurrentIndex(idx)
+        """Kept for caller compatibility — routes into causes list."""
+        if category and category != "All Causes":
+            self.causes_multi.set_checked([category])
 
     def populate_categories(self, categories):
-        current = self.categoryCombo.currentText()
-        self.categoryCombo.blockSignals(True)
-        self.categoryCombo.clear()
-        self.categoryCombo.addItem("All Causes")
-        for c in categories:
-            self.categoryCombo.addItem(c)
-        idx = self.categoryCombo.findText(current)
-        self.categoryCombo.setCurrentIndex(idx if idx >= 0 else 0)
-        self.categoryCombo.blockSignals(False)
+        """
+        Legacy hook — the SearchBar no longer sources categories from
+        the DB. Career clusters are fixed, so we ignore the argument.
+        """
+        return
 
-    # ── Input events ──────────────────────────────────────────────
+    # ── Input events ──────────────────────────────────────────────────
     def _on_text_changed(self, text):
         self.clear_action.setVisible(bool(text))
         if text:
             self.suggestions.setVisible(False)
 
-    # ── Emit ──────────────────────────────────────────────────────
+    # ── Emit ──────────────────────────────────────────────────────────
     def _emit_search(self):
         keyword = self.searchInput.text().strip()
-        location = self.locationInput.text().strip()
+        zipcode = self.zipcodeInput.text().strip()
         type_ = self.typeCombo.currentText()
-        category = self.categoryCombo.currentText()
+        city = self.cityCombo.currentText()
+        causes = self.causes_multi.checked_items()
 
-        # Nothing meaningful → do nothing (matches old behaviour).
-        if not keyword and not location and type_ == "All" and category == "All Causes":
+        # Nothing meaningful — do nothing.
+        if (not keyword and not zipcode
+                and type_ == "All"
+                and city == ALL_CITIES
+                and not causes):
             return
 
         if keyword:
@@ -174,15 +187,18 @@ class SearchBar(QWidget):
         self.suggestions.setVisible(False)
         self.searchRequested.emit({
             "keyword": keyword,
-            "location": location,
+            "location": "",
+            "zipcode": zipcode,
             "type": type_,
-            "category": category,
+            "city": city,
+            "high_school": "",
+            "cluster_list": causes,
             "date_enabled": False,
             "date_from": "",
             "date_to": "",
         })
 
-    # ── Suggestions popup ─────────────────────────────────────────
+    # ── Suggestions popup ─────────────────────────────────────────────
     def _maybe_show_suggestions(self):
         if not self._recent_searches:
             return

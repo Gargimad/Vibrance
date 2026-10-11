@@ -1,37 +1,21 @@
-"""
-volunteerPage.py — The volunteer-facing opportunity listing page.
-
-Composes:
-    • a header (back button, title, grid/list toggle)
-    • a FilterBar (delegates to filterBar.py)
-    • a results count line
-    • an empty state with a "Clear filters" action
-    • a QScrollArea with either a QGridLayout (grid view) or a QVBoxLayout
-      (list view), populated with EventCards
-
-Signals:
-    openLinkRequested(str)  — the user clicked "Open link" on a card.
-    rsvpSucceeded(int)      — the user successfully RSVP'd for an
-                              opportunity. landing.py listens and jumps
-                              to the volunteer's My Events tab.
-"""
-
+"""volunteerPage.py — events listing with a left sidebar of filters."""
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QStackedWidget, QGridLayout, QButtonGroup, QMessageBox,
+    QFrame,
 )
 
 import Events.theme as theme
 from Events.eventCard import EventCard
 from Events.eventDetailsDialog import EventDetailsDialog
-from Events.filterBar import FilterBar
+from Events.filterSidebar import FilterSidebar
 
 
 class VolunteerPage(QWidget):
     openLinkRequested = pyqtSignal(str)
-    rsvpSucceeded = pyqtSignal(int)     # opportunityID
+    rsvpSucceeded = pyqtSignal(int)
 
     def __init__(self, db, on_back_click=None, parent=None):
         super().__init__(parent)
@@ -41,6 +25,7 @@ class VolunteerPage(QWidget):
         self.current_view = "grid"
         self.current_filters = {}
         self.current_volunteer_id = None
+        self._bookmarked_ids = set()
         self._grid_cards = []
         self._grid_cols = 0
 
@@ -49,23 +34,38 @@ class VolunteerPage(QWidget):
         outer.setSpacing(0)
 
         outer.addWidget(self._build_header())
-        self.filter_bar = FilterBar()
-        self.filter_bar.filtersChanged.connect(self.apply_filters)
-        outer.addWidget(self.filter_bar)
 
-        outer.addWidget(self._build_results_count())
-        outer.addWidget(self._build_empty_state())
-        outer.addWidget(self._build_scroll(), 1)
+        # Body: sidebar | main content
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
 
-        self._populate_category_filter()
+        self.filter_sidebar = FilterSidebar()
+        self.filter_sidebar.filtersChanged.connect(self.apply_filters)
+        body.addWidget(self.filter_sidebar, 0)
+
+        main = QWidget()
+        main.setObjectName(theme.EVENT_MAIN_AREA)
+        main_v = QVBoxLayout(main)
+        main_v.setContentsMargins(0, 0, 0, 0)
+        main_v.setSpacing(0)
+
+        main_v.addWidget(self._build_results_bar())
+        main_v.addWidget(self._build_scroll(), 1)
+        main_v.addWidget(self._build_empty_state())
+
+        body.addWidget(main, 1)
+        outer.addLayout(body, 1)
+
         self.refresh()
 
-    # ── Construction helpers ──────────────────────────────────────────────
+    # ── Header ────────────────────────────────────────────────────────
     def _build_header(self):
         header = QWidget()
         header.setObjectName(theme.VOLUNTEER_HEADER)
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(20, 12, 20, 12)
+        layout.setContentsMargins(28, 16, 28, 16)
+        layout.setSpacing(12)
 
         back_btn = QPushButton("← Back")
         back_btn.setObjectName(theme.BACK_BTN)
@@ -101,38 +101,19 @@ class VolunteerPage(QWidget):
         layout.addWidget(self.list_btn)
         return header
 
-    def _build_results_count(self):
-        wrap = QWidget()
-        layout = QHBoxLayout(wrap)
-        layout.setContentsMargins(20, 2, 20, 2)
+    # ── Results bar ───────────────────────────────────────────────────
+    def _build_results_bar(self):
+        bar = QWidget()
+        bar.setObjectName(theme.EVENT_MAIN_AREA)
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(24, 12, 24, 4)
         self.results_lbl = QLabel("")
         self.results_lbl.setObjectName(theme.VOLUNTEER_RESULTS_COUNT)
         layout.addWidget(self.results_lbl)
         layout.addStretch()
-        return wrap
+        return bar
 
-    def _build_empty_state(self):
-        self.empty_wrap = QWidget()
-        self.empty_wrap.setObjectName(theme.VOLUNTEER_EMPTY_WRAP)
-        layout = QVBoxLayout(self.empty_wrap)
-        layout.setContentsMargins(20, 40, 20, 40)
-        layout.setSpacing(14)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.empty_lbl = QLabel("No results match your filters.")
-        self.empty_lbl.setObjectName(theme.VOLUNTEER_EMPTY)
-        self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.empty_btn = QPushButton("Clear filters")
-        self.empty_btn.setObjectName(theme.VOLUNTEER_EMPTY_BTN)
-        self.empty_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.empty_btn.clicked.connect(self.filter_bar.clear_filters)
-
-        layout.addWidget(self.empty_lbl)
-        layout.addWidget(self.empty_btn, 0, Qt.AlignmentFlag.AlignCenter)
-        self.empty_wrap.setVisible(False)
-        return self.empty_wrap
-
+    # ── Scroll container ──────────────────────────────────────────────
     def _build_scroll(self):
         self.scroll = QScrollArea()
         self.scroll.setObjectName(theme.VOLUNTEER_SCROLL)
@@ -148,8 +129,8 @@ class VolunteerPage(QWidget):
         self.grid_container = QWidget()
         self.grid_container.setObjectName(theme.VOLUNTEER_GRID_CONTAINER)
         self.grid_layout = QGridLayout(self.grid_container)
-        self.grid_layout.setContentsMargins(20, 10, 20, 30)
-        self.grid_layout.setSpacing(18)
+        self.grid_layout.setContentsMargins(24, 8, 24, 30)
+        self.grid_layout.setSpacing(20)
         self.grid_layout.setAlignment(
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
         )
@@ -157,8 +138,8 @@ class VolunteerPage(QWidget):
         self.list_container = QWidget()
         self.list_container.setObjectName(theme.VOLUNTEER_LIST_CONTAINER)
         self.list_layout = QVBoxLayout(self.list_container)
-        self.list_layout.setContentsMargins(20, 10, 20, 30)
-        self.list_layout.setSpacing(12)
+        self.list_layout.setContentsMargins(24, 8, 24, 30)
+        self.list_layout.setSpacing(14)
         self.list_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.content_stack.addWidget(self.grid_container)
@@ -166,16 +147,46 @@ class VolunteerPage(QWidget):
         self.scroll.setWidget(self.content_stack)
         return self.scroll
 
-    # ── External API ──────────────────────────────────────────────────────
+    def _build_empty_state(self):
+        self.empty_wrap = QWidget()
+        self.empty_wrap.setObjectName(theme.EVENT_MAIN_AREA)
+        layout = QVBoxLayout(self.empty_wrap)
+        layout.setContentsMargins(40, 60, 40, 60)
+        layout.setSpacing(14)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.empty_lbl = QLabel("No results match your filters.")
+        self.empty_lbl.setObjectName(theme.VOLUNTEER_EMPTY)
+        self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        btn = QPushButton("Clear filters")
+        btn.setObjectName(theme.VOLUNTEER_EMPTY_BTN)
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.clicked.connect(self.filter_sidebar.clear_filters)
+
+        layout.addWidget(self.empty_lbl)
+        layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignCenter)
+        self.empty_wrap.setVisible(False)
+        return self.empty_wrap
+
+    # ── External API ──────────────────────────────────────────────────
     def set_current_volunteer(self, volunteer_id):
         self.current_volunteer_id = volunteer_id
+        self._bookmarked_ids = set()
+        if volunteer_id:
+            try:
+                self._bookmarked_ids = self.db.getBookmarkedIDs(
+                    volunteer_id
+                )
+            except Exception:
+                pass
         self.refresh()
 
     def set_search_text(self, text):
-        self.filter_bar.set_search_text(text)
+        self.filter_sidebar.set_search_text(text)
 
     def set_type_filter(self, value):
-        self.filter_bar.set_type_filter(value)
+        self.filter_sidebar.set_type_filter(value)
 
     def set_view(self, mode):
         self.current_view = mode
@@ -187,15 +198,7 @@ class VolunteerPage(QWidget):
         self.current_filters = filters
         self.refresh()
 
-    # ── Data fetch ────────────────────────────────────────────────────────
-    def _populate_category_filter(self):
-        try:
-            cats = self.db.getDistinctCategories()
-        except Exception as e:
-            print("Category query error:", e)
-            cats = []
-        self.filter_bar.populate_categories(cats)
-
+    # ── Data ──────────────────────────────────────────────────────────
     def _query_db(self):
         f = self.current_filters or {}
         date_enabled = f.get("date_enabled", False)
@@ -203,14 +206,17 @@ class VolunteerPage(QWidget):
             keyword=f.get("keyword", ""),
             type_filter=f.get("type", "All"),
             location=f.get("location", ""),
-            category=f.get("category", "All Causes"),
             date_from=f.get("date_from") if date_enabled else None,
             date_to=f.get("date_to") if date_enabled else None,
             upcoming_only=True,
             limit=1000,
+            clusters=f.get("cluster_list") or None,
+            city=f.get("city"),
+            high_school=f.get("high_school"),
+            zipcode=f.get("zipcode") or None,
         )
 
-    # ── Render ────────────────────────────────────────────────────────────
+    # ── Render ────────────────────────────────────────────────────────
     def refresh(self):
         try:
             rows = self._query_db()
@@ -229,7 +235,9 @@ class VolunteerPage(QWidget):
         self.empty_wrap.setVisible(False)
         self.scroll.setVisible(True)
         n = len(rows)
-        self.results_lbl.setText(f"{n} result{'s' if n != 1 else ''}")
+        self.results_lbl.setText(
+            f"{n} result{'s' if n != 1 else ''}"
+        )
 
         if self.current_view == "grid":
             self._populate_grid(rows)
@@ -243,14 +251,34 @@ class VolunteerPage(QWidget):
         card = EventCard(
             row, view_mode=view_mode,
             current_volunteer_id=self.current_volunteer_id,
+            bookmarked_ids=self._bookmarked_ids,
         )
+        card.set_bookmark_callback(self._on_bookmark_toggled)
         card.openLinkRequested.connect(self.openLinkRequested.emit)
         card.rsvpRequested.connect(self._handle_rsvp)
         card.detailsRequested.connect(self._show_details)
         return card
 
+    def _on_bookmark_toggled(self, opportunityID, is_bookmarked):
+        if not self.current_volunteer_id:
+            return
+        result = self.db.toggleBookmark(
+            self.current_volunteer_id, opportunityID
+        )
+        if result == "error":
+            QMessageBox.warning(
+                self, "Bookmark", "Could not save bookmark."
+            )
+            return
+        if result == "added":
+            self._bookmarked_ids.add(opportunityID)
+        else:
+            self._bookmarked_ids.discard(opportunityID)
+
     def _populate_grid(self, rows):
-        self._grid_cards = [self._make_card(row, "grid") for row in rows]
+        self._grid_cards = [
+            self._make_card(row, "grid") for row in rows
+        ]
         self._grid_cols = 0
 
     def _populate_list(self, rows):
@@ -271,12 +299,15 @@ class VolunteerPage(QWidget):
             if w:
                 w.deleteLater()
 
-    # ── Responsive grid ───────────────────────────────────────────────────
+    # ── Responsive grid ───────────────────────────────────────────────
     def _grid_columns(self):
         m = self.grid_layout.contentsMargins()
         spacing = self.grid_layout.spacing()
         avail = self.scroll.viewport().width() - m.left() - m.right()
-        return max(1, (avail + spacing) // (EventCard.GRID_WIDTH + spacing))
+        return max(
+            1,
+            (avail + spacing) // (EventCard.GRID_WIDTH + spacing),
+        )
 
     def _layout_grid(self, force=False):
         if not self._grid_cards:
@@ -300,23 +331,28 @@ class VolunteerPage(QWidget):
         if self.current_view == "grid":
             self._layout_grid()
 
-    # ── Card events ───────────────────────────────────────────────────────
+    # ── Card events ───────────────────────────────────────────────────
     def _show_details(self, card):
         EventDetailsDialog(card, self).exec()
+
     def apply_external_filters(self, filters: dict):
-        """Called by landing when the guest home SearchBar fires.
-        Forward into the FilterBar widgets so their UI reflects the query."""
-        fb = self.filter_bar
+        fb = self.filter_sidebar
         fb.set_search_text(filters.get("keyword", ""))
         fb.set_type_filter(filters.get("type", "All"))
-        if filters.get("location"):
-            fb.location_input.setText(filters["location"])
-        if filters.get("category") and filters["category"] != "All Causes":
-            idx = fb.category_combo.findText(filters["category"])
+        if filters.get("zipcode"):
+            fb.zipcode_input.setText(filters["zipcode"])
+        if filters.get("city"):
+            idx = fb.city_combo.findText(filters["city"])
             if idx >= 0:
-                fb.category_combo.setCurrentIndex(idx)
-        # trigger a refresh through the normal emit path
-        fb._emit()
+                fb.city_combo.setCurrentIndex(idx)
+        cluster_list = filters.get("cluster_list") or []
+        if not cluster_list and filters.get("category") \
+                and filters["category"] != "All Causes":
+            cluster_list = [filters["category"]]
+        if cluster_list:
+            fb.set_causes(cluster_list)
+        else:
+            fb._emit()
 
     def _handle_rsvp(self, opportunity_id):
         if not self.current_volunteer_id:
@@ -329,8 +365,6 @@ class VolunteerPage(QWidget):
             self.current_volunteer_id, opportunity_id
         )
         if result == "ok":
-            # Record a notification so it shows up in the volunteer's
-            # Notifications tab.
             try:
                 row = self.db.getOpportunityByID(opportunity_id)
                 title = row["title"] if row else "an event"
@@ -347,7 +381,6 @@ class VolunteerPage(QWidget):
                 "You're signed up! Taking you to My Events.",
             )
             self.refresh()
-            # Tell landing to jump to the volunteer's My Events tab
             self.rsvpSucceeded.emit(opportunity_id)
         elif result == "duplicate":
             QMessageBox.information(

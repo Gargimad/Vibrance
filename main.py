@@ -9,7 +9,6 @@ import os
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
-
 import Guest.focusTracker as focusTracker
 import Events.theme as theme
 from Guest.landing import Landing

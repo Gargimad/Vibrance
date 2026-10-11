@@ -153,7 +153,7 @@ class VolunteerNotifications:
         """Return announcements + activity as one list, newest first."""
         # Imported here, not at the top, to avoid a circular import
         # (volunteerHome imports this module).
-        from volunteerHome import org_color, rget
+        from Volunteer.volunteerHome import org_color, rget
 
         items = []
 

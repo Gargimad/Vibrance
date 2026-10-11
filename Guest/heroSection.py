@@ -1,252 +1,211 @@
 """
-heroSection.py - Mission-style hero for Moxie's guest home page.
+heroSection.py — Editorial split-panel hero for Moxie's guest home.
 
-Layout (matches the reference design):
-    ┌─────────────────────┐      [Moxie wordmark]
-    │  [green rect]       │      is to connect volunteers
-    │   ┌────────────┐    │      with local organizations,
-    │   │   image    │    │      community projects,
-    │   └────────────┘    │      and nonprofits
-    │       [orange rect] │      that need them most.
-    └─────────────────────┘      [Learn More]
+Mirrors a magazine layout:
+    [left]   colored panel with three overlapping volunteer photos
+    [right]  big wordmark, headline, mission line, Learn More button
+    [bottom] solid brand bar spanning the full width
 
-The two columns are wrapped in a centered container so the composition
-reads the same on narrow laptops and ultrawide monitors. The brand
-wordmark swaps between light and dark assets via set_theme().
+Positions are expressed as fractions of the hero's current size so
+the layout scales cleanly on resize.
 """
-
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPixmap, QCursor
+from PyQt6.QtGui import QPixmap, QCursor, QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QSizePolicy,
+    QSizePolicy, QGraphicsDropShadowEffect,
 )
 
 import Events.theme as theme
 
 
-# ── Layered image with two offset color blocks ─────────────────────────
-class LayeredImage(QWidget):
-    GREEN = "#2D1A3E"
-    ORANGE = "#2F3B8A"
+class HeroPhoto(QLabel):
+    """A single photo tile with a soft drop shadow."""
 
-    # Overall footprint (image + the offset blocks that stick out)
-    # Reduced from 620x460 → 500x410 so the right column gets more room.
-    BLOCK_W = 500
-    BLOCK_H = 410
-
-    # Image — shrunk from 400x280 → 340x230
-    IMG_X, IMG_Y, IMG_W, IMG_H = 40, 30, 340, 230
-
-    # Top-left rect (behind image) — smaller corner tab
-    GREEN_X, GREEN_Y, GREEN_W, GREEN_H = 0, 0, 210, 200
-
-    # Bottom-right rect (behind image) — moved so it hugs the photo
-    ORANGE_X, ORANGE_Y = 120, 210
-    ORANGE_W, ORANGE_H = 360, 180
-
-    def __init__(self, image_path: str = "", parent=None):
+    def __init__(self, filename, parent=None):
         super().__init__(parent)
-        self.setFixedSize(self.BLOCK_W, self.BLOCK_H)
-        self.setStyleSheet("background: transparent;")
+        self.setObjectName(theme.HERO_PHOTO)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._source = QPixmap()
 
-        # Green block (bottom of the stack)
-        self.green = QFrame(self)
-        self.green.setStyleSheet(
-            f"background-color: {self.GREEN}; border: none;"
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(48)
+        shadow.setOffset(0, 16)
+        shadow.setColor(QColor(45, 26, 62, 120))
+        self.setGraphicsEffect(shadow)
+
+        self.load(filename)
+
+    def load(self, filename):
+        path = (filename if os.path.isabs(filename)
+                else theme.asset(filename))
+        if not os.path.exists(path):
+            path = theme.asset("noThumbnail.png")
+        self._source = QPixmap(path)
+        self._rescale()
+
+    def _rescale(self):
+        if self._source.isNull():
+            return
+        w, h = self.width(), self.height()
+        if w <= 0 or h <= 0:
+            return
+        scaled = self._source.scaled(
+            w, h,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
         )
-        self.green.setGeometry(
-            self.GREEN_X, self.GREEN_Y, self.GREEN_W, self.GREEN_H
-        )
+        x = (scaled.width() - w) // 2
+        y = (scaled.height() - h) // 2
+        self.setPixmap(scaled.copy(x, y, w, h))
 
-        # Image (middle)
-        self.image = QLabel(self)
-        self.image.setStyleSheet("border: none; background: transparent;")
-        self.image.setGeometry(self.IMG_X, self.IMG_Y,
-                               self.IMG_W, self.IMG_H)
-        self.image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        pix = QPixmap(image_path) if image_path else QPixmap()
-        if not pix.isNull():
-            scaled = pix.scaled(
-                self.IMG_W, self.IMG_H,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            x = (scaled.width() - self.IMG_W) // 2
-            y = (scaled.height() - self.IMG_H) // 2
-            self.image.setPixmap(
-                scaled.copy(x, y, self.IMG_W, self.IMG_H)
-            )
-        else:
-            self.image.setText("[ add heroImage.jpg to assets/ ]")
-            self.image.setStyleSheet(
-                "border: none; color: rgba(127,127,127,180);"
-                "background: rgba(127,127,127,20);"
-            )
-
-        # Orange block (behind the image, tucked under the photo)
-        self.orange = QFrame(self)
-        self.orange.setStyleSheet(
-            f"background-color: {self.ORANGE}; border: none;"
-        )
-        self.orange.setGeometry(
-            self.ORANGE_X, self.ORANGE_Y,
-            self.ORANGE_W, self.ORANGE_H
-        )
-
-        # Stack order: green at bottom, image over it, orange under that
-        self.green.lower()
-        self.image.raise_()
-        self.orange.lower()
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._rescale()
 
 
-# ── Full hero ──────────────────────────────────────────────────────────
 class HeroSection(QWidget):
+    """Editorial hero: colored left panel with three photos, wordmark
+    headline + mission on the right, solid bar across the bottom."""
+
     learnMoreRequested = pyqtSignal()
 
-    # Max height for the wordmark; keeps it from dominating on big screens.
-    LOGO_MAX_HEIGHT = 200
+    # Photos are positioned as fractions of the LEFT PANEL's size.
+    # (x, y, w, h, filename). Later entries render on top of earlier.
+    PHOTO_LAYOUT = [
+        # back layer: bottom-right, largest
+        (0.28, 0.44, 0.40, 0.44, "postVolunteerOpportunities.jpg"),
+        # top-left, separate
+        (0.05, 0.16, 0.38, 0.32, "discoverOpportunitiesImg.jpg"),
+        # front layer: overlaps the top-left of the bottom image
+        (0.12, 0.50, 0.26, 0.24, "trackVolunteers.jpg"),
+    ]
 
-    def __init__(self, image_filename: str = "heroImage.jpg", parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName(theme.heroSection)
+        self.setMinimumHeight(600)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Preferred)
 
-        # ── Outer wrapper: center the two-column block horizontally ────
-        # The outer stretches on both sides keep the inner content
-        # balanced on any window width, from a small laptop to an
-        # ultrawide monitor.
-        outer = QHBoxLayout(self)
-        outer.setContentsMargins(40, 60, 40, 60)
-        outer.setSpacing(0)
-        outer.addStretch(1)
+        # Background panels — added first so they sit behind photos
+        self.left_panel = QFrame(self)
+        self.left_panel.setObjectName(theme.HERO_LEFT_PANEL)
 
-        # The inner container holds the actual two columns.
-        inner = QWidget()
-        inner.setSizePolicy(QSizePolicy.Policy.Maximum,
-                            QSizePolicy.Policy.Preferred)
-        inner_layout = QHBoxLayout(inner)
-        inner_layout.setContentsMargins(0, 0, 0, 0)
-        inner_layout.setSpacing(70)
+        self.bottom_bar = QFrame(self)
+        self.bottom_bar.setObjectName(theme.HERO_BOTTOM_BAR)
 
-        # ── Left: layered image ────────────────────────────────────────
-        image_path = theme.asset(image_filename)
-        if not os.path.exists(image_path):
-            # Fall back to any existing feature image so the layout
-            # doesn't render an empty box during development.
-            for fallback in ("discoverOpportunitiesImg.jpg",
-                             "trackVolunteers.jpg",
-                             "noThumbnail.png"):
-                candidate = theme.asset(fallback)
-                if os.path.exists(candidate):
-                    image_path = candidate
-                    break
+        # Photos on the left
+        self._photos = [
+            HeroPhoto(filename, self)
+            for (_x, _y, _w, _h, filename) in self.PHOTO_LAYOUT
+        ]
 
-        self.image_stack = LayeredImage(image_path, self)
+        # Text panel on the right
+        self.text_panel = QWidget(self)
+        self.text_panel.setObjectName(theme.HERO_RIGHT_PANEL)
+        self._build_text_panel()
 
-        image_col = QVBoxLayout()
-        image_col.addStretch(1)
-        image_col.addWidget(self.image_stack)
-        image_col.addStretch(1)
-        inner_layout.addLayout(image_col, 0)
+        self.left_panel.lower()
+        self.bottom_bar.lower()
 
-        # ── Right: logo + mission ──────────────────────────────────────
-        # Stretch=2 gives the text column noticeably more width than
-        # the image column, which is what we want now.
-        text_col = QVBoxLayout()
-        text_col.setSpacing(4)
-        text_col.addStretch(1)
+    # ── Text panel ────────────────────────────────────────────────────
+    def _build_text_panel(self):
+        v = QVBoxLayout(self.text_panel)
+        v.setContentsMargins(56, 44, 56, 44)
+        v.setSpacing(18)
 
-        # Brand wordmark (pixmap, not text)
-        self.logo = QLabel()
-        self.logo.setAlignment(Qt.AlignmentFlag.AlignLeft
-                               | Qt.AlignmentFlag.AlignVCenter)
-        self.logo.setSizePolicy(QSizePolicy.Policy.Preferred,
-                                QSizePolicy.Policy.Fixed)
-        text_col.addWidget(self.logo)
-        text_col.addSpacing(14)
+        self.wordmark = QLabel()
+        self.wordmark.setObjectName(theme.HERO_WORDMARK)
+        self.wordmark.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        v.addWidget(self.wordmark)
 
-        # Lines with alternating weights/sizes, matching the reference.
-        text_col.addWidget(self._line(
-            "is to connect volunteers",
-            theme.HERO_MISSION_BODY_SM,
-        ))
-        text_col.addWidget(self._line(
-            "with local organizations,",
-            theme.HERO_MISSION_BODY_LG,
-        ))
-        text_col.addWidget(self._line(
-            "community projects,",
-            theme.HERO_MISSION_BODY_LG,
-        ))
-        text_col.addWidget(self._line(
-            "and nonprofits",
-            theme.HERO_MISSION_BODY_LG,
-        ))
-        text_col.addWidget(self._line(
-            "that need them most.",
-            theme.HERO_MISSION_BODY_MD,
-        ))
+        headline = QLabel("Volunteering that fits\nwho you're becoming.")
+        headline.setObjectName(theme.HERO_HEADLINE)
+        headline.setWordWrap(True)
+        v.addWidget(headline)
 
-        text_col.addSpacing(28)
+        sub = QLabel(
+            "Moxie connects Georgia students to local nonprofits "
+            "through the career clusters they're already curious about."
+        )
+        sub.setObjectName(theme.HERO_SUB)
+        sub.setWordWrap(True)
+        v.addWidget(sub)
 
-        learn_btn = QPushButton("Learn More")
-        learn_btn.setObjectName(theme.HERO_LEARN_BTN)
-        learn_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        learn_btn.setFixedSize(180, 54)
-        learn_btn.clicked.connect(self.learnMoreRequested.emit)
+        v.addSpacing(8)
 
         btn_row = QHBoxLayout()
-        btn_row.addWidget(learn_btn)
+        learn = QPushButton("Learn More")
+        learn.setObjectName(theme.HERO_LEARN_BTN)
+        learn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        learn.setFixedSize(180, 54)
+        learn.clicked.connect(self.learnMoreRequested.emit)
+        btn_row.addWidget(learn)
         btn_row.addStretch(1)
-        text_col.addLayout(btn_row)
+        v.addLayout(btn_row)
 
-        text_col.addStretch(1)
-        inner_layout.addLayout(text_col, 2)
+        v.addStretch(1)
 
-        outer.addWidget(inner)
-        outer.addStretch(1)
+        self._load_wordmark(False)
 
-        # Load the initial wordmark (light mode by default).
-        self.set_theme(is_dark=False)
-
-    # ── Theme ─────────────────────────────────────────────────────────
-    def set_theme(self, is_dark: bool):
-        """Swap the wordmark to match the current theme.
-
-        Called by landing._update_logos() whenever the theme changes,
-        and once at construction time to set the initial asset.
-        """
-        filename = ("logoFullLight.png" if is_dark
-                    else "logoFullDark.png")
+    def _load_wordmark(self, is_dark):
+        filename = "logoFullLight.png" if is_dark else "logoFullDark.png"
         path = theme.asset(filename)
-        pix = QPixmap(path)
-
-        if pix.isNull():
-            # Fallback so the hero doesn't collapse if the asset is
-            # missing — a plain text heading in the right theme colour.
-            self.logo.setText("Moxie")
-            color = "#F5F0EE" if is_dark else "#2D1A3E"
-            self.logo.setStyleSheet(
-                f"font-size: 72px; font-weight: 900; "
-                f"letter-spacing: -2px; color: {color};"
+        if os.path.exists(path):
+            pix = QPixmap(path)
+            self.wordmark.setPixmap(
+                pix.scaledToHeight(
+                    96, Qt.TransformationMode.SmoothTransformation
+                )
             )
+        else:
+            self.wordmark.setText("Moxie")
+            self.wordmark.setStyleSheet(
+                "font-size: 84px; font-weight: 900;"
+                " letter-spacing: -3px;"
+            )
+
+    def set_theme(self, is_dark):
+        """Called by landing when the theme toggles."""
+        self._load_wordmark(is_dark)
+
+    # ── Resize ────────────────────────────────────────────────────────
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._relayout()
+
+    def _relayout(self):
+        w, h = self.width(), self.height()
+        if w <= 0 or h <= 0:
             return
 
-        scaled = pix.scaledToHeight(
-            self.LOGO_MAX_HEIGHT,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.logo.setPixmap(scaled)
+        bar_h = int(h * 0.14)
+        card_h = h - bar_h
+        left_w = int(w * 0.52)
 
-    # ── Helpers ───────────────────────────────────────────────────────
-    @staticmethod
-    def _line(text: str, object_name: str) -> QLabel:
-        lbl = QLabel(text)
-        lbl.setObjectName(object_name)
-        lbl.setWordWrap(True)
-        return lbl
+        # Background panels
+        self.left_panel.setGeometry(0, 0, left_w, card_h)
+        self.bottom_bar.setGeometry(0, card_h, w, bar_h)
+        self.text_panel.setGeometry(left_w, 0, w - left_w, card_h)
+
+        # Photos
+        for photo, (fx, fy, fw, fh, _name) in zip(
+            self._photos, self.PHOTO_LAYOUT
+        ):
+            px = int(fx * left_w)
+            py = int(fy * card_h)
+            pw = int(fw * left_w)
+            ph = int(fh * card_h)
+            photo.setGeometry(px, py, pw, ph)
+            photo.show()
+
+        # Re-stack so later PHOTO_LAYOUT entries render on top,
+        # then bring the text panel back up so it can't be covered.
+        for photo in self._photos:
+            photo.raise_()
+        self.text_panel.raise_()

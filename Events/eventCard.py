@@ -1,27 +1,16 @@
-"""
-eventCard.py — The opportunity card used on the home carousels and the
-volunteer listing page.
-
-Two card variants, styled entirely by QSS:
-    • "EventCard"       imported orgs (Volunteer Connector)
-    • "EventCardMoxie"  Moxie-registered orgs, with a "Verified on Moxie"
-                        pill and a "Sign up" button label
-
-Rounded corners and card colors live in lightMode.qss / darkMode.qss.
-This file only decides *which* object name to use.
-"""
-
+"""eventCard.py — the opportunity card used in grid + list views."""
 import hashlib
 import os
 import urllib.request
 import urllib.error
 
 from PyQt6.QtCore import Qt, QByteArray, pyqtSignal, QRectF
-from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPainterPath, QColor
+from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
-    QWidget,
+    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QSizePolicy, QWidget,
 )
+
 from Events.dateFormat import format_event_when
 import Events.theme as theme
 
@@ -32,26 +21,8 @@ THUMB_CACHE_DIR = os.path.join(
 
 _PIXMAP_CACHE = {}
 _PIXMAP_CACHE_LIMIT = 300
-
 USER_AGENT = "Moxie/1.0"
-
-# Corner radius used when we round the image itself.
-THUMB_RADIUS = 13
-
-# Inline style for the "Verified on Moxie" pill. Kept in Python because
-# it's a one-off element whose color depends on the accent, not the
-# theme. If you'd rather move it to QSS, add a rule for #VerifiedPill.
-VERIFIED_PILL_STYLE = """
-QLabel {
-    background-color: #B1A2A8;
-    color: #2D1A3E;
-    border-radius: 9px;
-    padding: 3px 9px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}
-"""
+THUMB_RADIUS = 12
 
 
 def clear_thumbnail_cache():
@@ -85,41 +56,29 @@ def _fetch_remote_bytes(url: str, timeout: int = 8) -> bytes:
     try:
         with open(cache_path, "wb") as f:
             f.write(data)
-    except OSError as e:
-        print(f"[thumb] cache write failed: {e}")
+    except OSError:
+        pass
     return data
 
 
 def _fit_centered(pixmap, width, height, radius=None):
-    """
-    Scale pixmap to fit inside (width, height), center it on a canvas of
-    that size, and optionally round the canvas corners.
-    """
     scaled = pixmap.scaled(
         width, height,
-        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
         Qt.TransformationMode.SmoothTransformation,
     )
-
     canvas = QPixmap(width, height)
     canvas.fill(Qt.GlobalColor.transparent)
-
     painter = QPainter(canvas)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-
     if radius:
         path = QPainterPath()
-        path.addRoundedRect(
-            QRectF(0, 0, width, height), radius, radius
-        )
+        path.addRoundedRect(QRectF(0, 0, width, height), radius, radius)
         painter.setClipPath(path)
-
-    painter.drawPixmap(
-        (width - scaled.width()) // 2,
-        (height - scaled.height()) // 2,
-        scaled,
-    )
+    x = (scaled.width() - width) // 2
+    y = (scaled.height() - height) // 2
+    painter.drawPixmap(0, 0, scaled, x, y, width, height)
     painter.end()
     return canvas
 
@@ -135,7 +94,7 @@ def load_thumbnail_pixmap(blob, width, height, key=None, radius=None):
             data = _fetch_remote_bytes(blob)
             if data:
                 pixmap.loadFromData(QByteArray(data))
-        elif blob.startswith("//"):
+        elif blob.startswith("/"):
             data = _fetch_remote_bytes("https:" + blob)
             if data:
                 pixmap.loadFromData(QByteArray(data))
@@ -150,7 +109,6 @@ def load_thumbnail_pixmap(blob, width, height, key=None, radius=None):
         return None
 
     result = _fit_centered(pixmap, width, height, radius=radius)
-
     if cache_key:
         if len(_PIXMAP_CACHE) >= _PIXMAP_CACHE_LIMIT:
             _PIXMAP_CACHE.pop(next(iter(_PIXMAP_CACHE)))
@@ -167,23 +125,22 @@ def truncate_text(text, max_len):
     cut = text[:max_len]
     if " " in cut:
         cut = cut.rsplit(" ", 1)[0]
-    return cut + "…"
+    return cut + "..."
 
 
 def build_badges(category, is_remote, location, status):
+    """Legacy helper — kept for eventDetailsDialog compatibility."""
     labels = []
     if category:
         cat = QLabel(category)
         cat.setObjectName(theme.EVENT_CATEGORY_BADGE)
         cat.setAlignment(Qt.AlignmentFlag.AlignCenter)
         labels.append(cat)
-
     loc_text = "Remote" if is_remote else (location or "Location TBD")
     loc = QLabel(loc_text)
     loc.setObjectName(theme.EVENT_LOCATION_BADGE)
     loc.setAlignment(Qt.AlignmentFlag.AlignCenter)
     labels.append(loc)
-
     if status and status != "open":
         st = QLabel(status.upper())
         st.setObjectName(theme.EVENT_STATUS_BADGE)
@@ -193,6 +150,7 @@ def build_badges(category, is_remote, location, status):
 
 
 def make_meta_row(key, value):
+    """Legacy helper — kept for eventDetailsDialog compatibility."""
     row = QHBoxLayout()
     row.setSpacing(6)
     row.setContentsMargins(0, 0, 0, 0)
@@ -212,20 +170,21 @@ class EventCard(QFrame):
     detailsRequested = pyqtSignal(object)
 
     GRID_WIDTH = 300
-    GRID_THUMB_H = 150
-    GRID_FIXED_HEIGHT = 510
-    LIST_THUMB_W = 220
+    GRID_THUMB_H = 160
+    GRID_FIXED_HEIGHT = 500
+    LIST_THUMB_W = 240
     LIST_THUMB_H = 160
-    LIST_MIN_HEIGHT = 160
+    LIST_MIN_HEIGHT = 190
 
     def __init__(self, row, view_mode="grid", parent=None,
-                 current_volunteer_id=None):
+                 current_volunteer_id=None, bookmarked_ids=None):
         super().__init__(parent)
 
-        # Which QSS variant? Moxie orgs get the accent border.
         self.row = row
         self.view_mode = view_mode
         self.current_volunteer_id = current_volunteer_id
+        self._bookmarked_ids = set(bookmarked_ids or set())
+        self._bookmark_cb = None
 
         def g(key, default=""):
             try:
@@ -249,6 +208,8 @@ class EventCard(QFrame):
         self.description = g("description", "")
         self.category = g("category", "")
         self.location = g("location", "")
+        self.city = g("city", "")
+        self.state = g("state", "GA")
         self.is_remote = bool(g("is_remote", 0))
         self.event_date = g("event_date", "")
         self.event_end_date = g("event_end_date", "")
@@ -273,15 +234,64 @@ class EventCard(QFrame):
         else:
             self._build_grid_layout()
 
-    # ── shared sub-builders ───────────────────────────────────────────────
-    def _make_thumbnail(self, w, h):
-        """
-        Returns a widget containing the (rounded) image and, for Moxie
-        orgs, a small "Verified on Moxie" pill overlaid on the top-left.
-        """
+    # ── Bookmark ──────────────────────────────────────────────────────
+    def _is_bookmarked(self):
+        if not self.current_volunteer_id or not self._bookmarked_ids:
+            return False
+        return self.opportunityID in self._bookmarked_ids
+
+    def set_bookmark_callback(self, fn):
+        self._bookmark_cb = fn
+
+    def _make_bookmark_button(self):
+        on = self._is_bookmarked()
+        btn = QPushButton("★" if on else "☆")
+        btn.setObjectName(
+            theme.EVENT_BOOKMARK_BTN_ON if on else theme.EVENT_BOOKMARK_BTN
+        )
+        btn.setFixedSize(34, 34)
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.setToolTip("Remove bookmark" if on else "Bookmark this event")
+        btn.setEnabled(bool(self.current_volunteer_id))
+        if not self.current_volunteer_id:
+            btn.setToolTip("Log in as a volunteer to bookmark events")
+        btn.clicked.connect(self._toggle_bookmark)
+        return btn
+
+    def _toggle_bookmark(self):
+        if not self.current_volunteer_id:
+            return
+        emit_add = self.opportunityID not in self._bookmarked_ids
+        if emit_add:
+            self._bookmarked_ids.add(self.opportunityID)
+        else:
+            self._bookmarked_ids.discard(self.opportunityID)
+        on = self._is_bookmarked()
+        self._refresh_bookmark_button()
+        if self._bookmark_cb:
+            self._bookmark_cb(self.opportunityID, on)
+
+    def _refresh_bookmark_button(self):
+        for b in self.findChildren(QPushButton):
+            if b.objectName() in (
+                theme.EVENT_BOOKMARK_BTN,
+                theme.EVENT_BOOKMARK_BTN_ON,
+            ):
+                on = self._is_bookmarked()
+                b.setText("★" if on else "☆")
+                b.setObjectName(
+                    theme.EVENT_BOOKMARK_BTN_ON if on
+                    else theme.EVENT_BOOKMARK_BTN
+                )
+                b.style().unpolish(b)
+                b.style().polish(b)
+                return
+
+    # ── Thumbnail ─────────────────────────────────────────────────────
+    def _make_thumbnail(self, w, h, with_bookmark=False):
         wrap = QWidget()
         wrap.setFixedSize(w, h)
-        wrap.setStyleSheet("background: transparent;")
+        wrap.setObjectName(theme.EVENT_THUMB)
 
         thumb = QLabel(wrap)
         thumb.setObjectName(theme.EVENT_THUMB)
@@ -299,92 +309,43 @@ class EventCard(QFrame):
         else:
             thumb.setText("No image")
 
-        if self.is_moxie_org:
-            pill = QLabel("✓ Verified on Moxie", wrap)
-            pill.setStyleSheet(VERIFIED_PILL_STYLE)
-            pill.adjustSize()
-            pill.move(10, 10)
-            pill.raise_()
-
-        return wrap
-
-    def _make_source_badge(self):
-        """Small pill that clearly says where the opportunity came from."""
-        label = QLabel("Moxie" if self.is_moxie_org else "External")
-        label.setObjectName(
+        # Source pill (top-left)
+        source = QLabel("Moxie" if self.is_moxie_org else "External", wrap)
+        source.setObjectName(
             theme.EVENT_SOURCE_MOXIE if self.is_moxie_org
             else theme.EVENT_SOURCE_EXTERNAL
         )
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setToolTip(
-            "Posted by a Moxie-registered organization"
-            if self.is_moxie_org
-            else "Imported from an external source"
-        )
-        return label
+        source.adjustSize()
+        source.move(12, 12)
+        source.raise_()
 
-    def _make_badges(self, with_org=False):
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self._make_source_badge())
-        for lbl in build_badges(self.category, self.is_remote,
-                                self.location, self.status):
-            row.addWidget(lbl)
-        if with_org:
-            org = QLabel(f"by {self.org_name}")
-            org.setObjectName(theme.EVENT_ORG)
-            row.addWidget(org)
-        row.addStretch(1)
-        return row
+        # Bookmark overlay (top-right) — grid view only
+        if with_bookmark:
+            bm = self._make_bookmark_button()
+            bm.setParent(wrap)
+            bm.setFixedSize(34, 34)
+            bm.move(w - bm.width() - 12, 12)
+            bm.raise_()
 
-    # ── buttons ───────────────────────────────────────────────────────────
-    def _make_link_button(self):
-        btn = QPushButton("Open link" if self.website_link else "No link")
-        btn.setObjectName(theme.EVENT_LINK_BTN)
-        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn.setEnabled(bool(self.website_link))
-        btn.clicked.connect(self.open_link)
-        return btn
+        return wrap
 
-    def _rsvp_label(self):
-        if self.status == "open":
-            action = "Sign up" if self.is_moxie_org else "RSVP"
-            if not self.current_volunteer_id:
-                return f"Log In to {action}"
-            return action
-        if self.status == "full":
-            return "Full"
-        return self.status.capitalize()
+    # ── Chips / meta ──────────────────────────────────────────────────
+    def _make_cluster_chip(self):
+        label = self.category or "General"
+        chip = QLabel(label)
+        chip.setObjectName(theme.EVENT_CLUSTER_CHIP)
+        chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        return chip
 
-    def _make_rsvp_button(self):
-        btn = QPushButton(self._rsvp_label())
-        btn.setObjectName(theme.EVENT_RSVP_BTN)
-        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        if self.status == "open":
-            btn.setEnabled(True)
-            if self.current_volunteer_id:
-                btn.setToolTip("Sign up for this event")
-            else:
-                btn.setToolTip("Log in as a volunteer to sign up")
-        else:
-            btn.setEnabled(False)
-            btn.setToolTip(f"This event is {self.status}")
-        btn.clicked.connect(self.request_rsvp)
-        return btn
-
-    def _make_details_button(self):
-        """Full-width 'Open Details' button shown under the action row."""
-        btn = QPushButton("Open Details")
-        btn.setObjectName(theme.EVENT_DETAILS_BTN)
-        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn.setToolTip("See the full event description and metadata")
-        btn.clicked.connect(self.request_details)
-        return btn
-
-    # ── meta rows ─────────────────────────────────────────────────────────
     def _date_text(self):
         return format_event_when(self.row)
+
+    def _location_text(self):
+        if self.is_remote:
+            return "Remote"
+        if self.city and self.state:
+            return f"{self.city}, {self.state}"
+        return self.location or "Location TBD"
 
     def _spots_text(self):
         if not self.capacity:
@@ -394,130 +355,231 @@ class EventCard(QFrame):
             return "Full"
         if left == 1:
             return "1 spot left"
-        if left <= 3:
-            return f"Only {left} spots left"
-        return f"{left} of {self.capacity} left"
+        return f"{left} of {self.capacity} spots"
 
-    def _make_date_line(self):
-        box = QVBoxLayout()
-        box.setSpacing(4)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.addLayout(make_meta_row("Date", self._date_text()))
+    def _make_meta_columns(self):
+        """Two-column meta grid: Date | Where, and Spots below."""
+        wrap = QWidget()
+        wrap.setObjectName(theme.EVENT_CARD_BODY)
+        v = QVBoxLayout(wrap)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(4)
+
+        row1 = QHBoxLayout()
+        row1.setSpacing(20)
+        row1.addLayout(self._meta_block("DATE", self._date_text()), 1)
+        row1.addLayout(
+            self._meta_block("WHERE", self._location_text()), 1
+        )
+        v.addLayout(row1)
+
         spots = self._spots_text()
         if spots:
-            box.addLayout(make_meta_row("Spots", spots))
-        return box
+            v.addLayout(self._meta_block("SPOTS", spots))
+        return wrap
+    def _make_meta_line(self):
+        """Compact single-line meta for the list view."""
+        parts = []
+        date_txt = self._date_text() or "TBD"
+        parts.append(f"Date: {date_txt}")
 
-    def _make_org_line(self):
-        lbl = QLabel(f"by {self.org_name}")
-        lbl.setObjectName(theme.EVENT_ORG)
-        lbl.setWordWrap(True)
-        return lbl
+        where = self._location_text()
+        if where:
+            parts.append(f"Where: {where}")
 
-    # ── grid layout ───────────────────────────────────────────────────────
+        spots = self._spots_text()
+        if spots:
+            parts.append(f"Spots: {spots}")
+
+        label = QLabel("   ·   ".join(parts))
+        label.setObjectName(theme.EVENT_META_VALUE)
+        label.setWordWrap(True)
+        return label
+    @staticmethod
+    def _meta_block(label_text, value_text):
+        block = QVBoxLayout()
+        block.setSpacing(2)
+        block.setContentsMargins(0, 0, 0, 0)
+        lbl = QLabel(label_text)
+        lbl.setObjectName(theme.EVENT_CARD_META_ICON)
+        val = QLabel(value_text)
+        val.setObjectName(theme.EVENT_META_VALUE)
+        val.setWordWrap(True)
+        block.addWidget(lbl)
+        block.addWidget(val)
+        return block
+
+    # ── RSVP / link / details ─────────────────────────────────────────
+    def _rsvp_label(self):
+        if self.status == "open":
+            action = "Sign up" if self.is_moxie_org else "RSVP"
+            if not self.current_volunteer_id:
+                return f"Log in to {action}"
+            return action
+        if self.status == "full":
+            return "Full"
+        return self.status.capitalize()
+
+    def _make_rsvp_button(self):
+        btn = QPushButton(self._rsvp_label())
+        btn.setObjectName(theme.EVENT_RSVP_BTN)
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.setMinimumHeight(36)
+        if self.status == "open":
+            btn.setEnabled(True)
+        else:
+            btn.setEnabled(False)
+        btn.clicked.connect(self.request_rsvp)
+        return btn
+
+    def _make_details_button(self):
+        btn = QPushButton("Open Details")
+        btn.setObjectName(theme.EVENT_DETAILS_BTN)
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.setMinimumHeight(28)   # was 36
+        btn.clicked.connect(self.request_details)
+        return btn
+
+    def _make_link_button(self):
+        btn = QPushButton("Link" if self.website_link else "No link")
+        btn.setObjectName(theme.EVENT_LINK_BTN)
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.setMinimumHeight(36)
+        btn.setEnabled(bool(self.website_link))
+        btn.clicked.connect(self.open_link)
+        return btn
+
+    # ── Grid layout ───────────────────────────────────────────────────
     def _build_grid_layout(self):
         self.setFixedWidth(self.GRID_WIDTH)
         self.setFixedHeight(self.GRID_FIXED_HEIGHT)
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed,
+                           QSizePolicy.Policy.Fixed)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        layout.addWidget(
-            self._make_thumbnail(self.GRID_WIDTH, self.GRID_THUMB_H)
+        # Image with a bookmark overlay in the top-right corner
+        outer.addWidget(
+            self._make_thumbnail(
+                self.GRID_WIDTH, self.GRID_THUMB_H,
+                with_bookmark=True,
+            )
         )
 
-        content = QVBoxLayout()
-        content.setContentsMargins(16, 14, 16, 14)
-        content.setSpacing(10)
+        body = QWidget()
+        body.setObjectName(theme.EVENT_CARD_BODY)
+        v = QVBoxLayout(body)
+        v.setContentsMargins(18, 14, 18, 16)
+        v.setSpacing(10)
 
-        content.addLayout(self._make_badges())
+        v.addWidget(self._make_cluster_chip())
 
-        title_lbl = QLabel(truncate_text(self.title, 60))
-        title_lbl.setObjectName(theme.EVENT_TITLE)
-        title_lbl.setWordWrap(True)
-        title_lbl.setMaximumHeight(44)
-        title_lbl.setToolTip(self.title)
-        content.addWidget(title_lbl)
+        title = QLabel(truncate_text(self.title, 68))
+        title.setObjectName(theme.EVENT_TITLE)
+        title.setWordWrap(True)
+        title.setMinimumHeight(40)
+        title.setToolTip(self.title)
+        v.addWidget(title)
 
-        content.addWidget(self._make_org_line())
+        org = QLabel(f"by {self.org_name}")
+        org.setObjectName(theme.EVENT_ORG)
+        org.setWordWrap(True)
+        v.addWidget(org)
 
-        desc_lbl = QLabel(truncate_text(self.description, 120))
-        desc_lbl.setObjectName(theme.EVENT_DESCRIPTION)
-        desc_lbl.setWordWrap(True)
-        desc_lbl.setMinimumHeight(50)
-        desc_lbl.setMaximumHeight(58)
-        content.addWidget(desc_lbl)
+        desc = QLabel(truncate_text(self.description, 110))
+        desc.setObjectName(theme.EVENT_DESCRIPTION)
+        desc.setWordWrap(True)
+        desc.setMinimumHeight(36)
+        desc.setMaximumHeight(56)
+        v.addWidget(desc)
 
-        content.addLayout(self._make_date_line())
-        content.addStretch(1)
+        v.addWidget(self._make_meta_columns())
+        v.addStretch(1)
 
-        # Single action row: Open link + RSVP / Sign up
+        # Action row: RSVP + Link, equal width
         actions = QHBoxLayout()
         actions.setSpacing(8)
-        actions.addWidget(self._make_link_button())
-        actions.addWidget(self._make_rsvp_button())
-        content.addLayout(actions)
+        actions.addWidget(self._make_rsvp_button(), 1)
+        actions.addWidget(self._make_link_button(), 1)
+        v.addLayout(actions)
 
-        # Full-width "Open Details" under the action row
-        content.addWidget(self._make_details_button())
+        # Open Details on its own row so nothing gets truncated
+        v.addWidget(self._make_details_button())
 
-        layout.addLayout(content)
-
-    # ── list layout ───────────────────────────────────────────────────────
+        outer.addWidget(body, 1)
+    # ── List layout ───────────────────────────────────────────────────
     def _build_list_layout(self):
         self.setMinimumHeight(self.LIST_MIN_HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Minimum)
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(16, 16, 16, 16)
+        outer.setSpacing(18)
 
-        layout.addWidget(
-            self._make_thumbnail(self.LIST_THUMB_W, self.LIST_THUMB_H)
+        outer.addWidget(
+            self._make_thumbnail(self.LIST_THUMB_W, self.LIST_THUMB_H),
+            0, Qt.AlignmentFlag.AlignTop,
         )
 
-        content = QVBoxLayout()
-        content.setContentsMargins(20, 16, 20, 16)
-        content.setSpacing(10)
+        body = QWidget()
+        body.setObjectName(theme.EVENT_CARD_BODY)
+        v = QVBoxLayout(body)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
 
-        # Top row: title on the left, link + RSVP on the right
+        # Title + bookmark
         top = QHBoxLayout()
-        top.setSpacing(16)
+        top.setSpacing(12)
+        title = QLabel(self.title)
+        title.setObjectName(theme.EVENT_TITLE_LIST)
+        title.setWordWrap(True)
+        top.addWidget(title, 1)
+        top.addWidget(self._make_bookmark_button())
+        v.addLayout(top)
 
-        title_lbl = QLabel(self.title)
-        title_lbl.setObjectName(theme.EVENT_TITLE_LIST)
-        title_lbl.setWordWrap(True)
+        org = QLabel(f"by {self.org_name}")
+        org.setObjectName(theme.EVENT_ORG)
+        org.setWordWrap(True)
+        v.addWidget(org)
 
+        # Chip row
+        chips = QHBoxLayout()
+        chips.setSpacing(6)
+        chips.addWidget(self._make_cluster_chip())
+        chips.addStretch(1)
+        v.addLayout(chips)
+
+        # One-line description
+        desc = QLabel(truncate_text(self.description, 240))
+        desc.setObjectName(theme.EVENT_DESCRIPTION)
+        desc.setWordWrap(True)
+        v.addWidget(desc)
+
+        # Single compact meta line
+        v.addWidget(self._make_meta_line())
+
+        v.addStretch(1)
+
+        # Actions right-aligned, minimum width so they never
+        # get squeezed into truncated labels
         actions = QHBoxLayout()
-        actions.setSpacing(8)
-        actions.addWidget(self._make_link_button())
-        actions.addWidget(self._make_rsvp_button())
+        actions.setSpacing(10)
+        actions.addStretch(1)
+        link = self._make_link_button()
+        rsvp = self._make_rsvp_button()
+        details = self._make_details_button()
+        for btn in (link, rsvp, details):
+            btn.setMinimumWidth(140)
+        actions.addWidget(link)
+        actions.addWidget(rsvp)
+        actions.addWidget(details)
+        v.addLayout(actions)
 
-        top.addWidget(title_lbl, 1)
-        top.addLayout(actions)
-        content.addLayout(top)
-
-        # Full-width "Open Details" under the top row
-        content.addWidget(self._make_details_button())
-
-        # Badges row (source / category / location / status / org)
-        content.addLayout(self._make_badges(with_org=True))
-
-        desc_lbl = QLabel(truncate_text(self.description, 260))
-        desc_lbl.setObjectName(theme.EVENT_DESCRIPTION)
-        desc_lbl.setWordWrap(True)
-        desc_lbl.setMaximumHeight(60)
-        content.addWidget(desc_lbl)
-
-        content.addLayout(self._make_date_line())
-        content.addStretch(1)
-
-        layout.addLayout(content, 1)
-
-    # ── events ────────────────────────────────────────────────────────────
+        outer.addWidget(body, 1)
+    # ── Events ────────────────────────────────────────────────────────
     def open_link(self):
         if self.website_link:
             self.openLinkRequested.emit(self.website_link)
