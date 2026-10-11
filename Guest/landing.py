@@ -1,6 +1,15 @@
 """
 landing.py - Main window and navigation for Moxie.
+
+Owns the QStackedWidget of pages (guest home, register, login, volunteer
+home, FAQ, volunteer listing, org dashboard) plus the session-aware nav
+bar, the guest search bar, and the global mic button.
+
+The guest home hero is rendered by HeroSection (heroSection.py); the
+three feature cards emit their own signals so they can route to
+different pages.
 """
+
 import webbrowser
 
 from PyQt6.QtCore import Qt, QSettings
@@ -23,7 +32,6 @@ from Authentication.login import Login
 from Volunteer.volunteerHome import VolunteerHome, TAB_PROFILE
 from Guest.FAQ import FAQPage
 from Volunteer.volunteerPage import VolunteerPage
-from Volunteer.orgBrowsePage import OrgBrowsePage
 from Organization.orgDashboard import OrgDashboard
 from Guest.globalMic import GlobalMicButton
 
@@ -37,20 +45,31 @@ PAGE_VOL_HOME = 4
 PAGE_FAQ = 5
 PAGE_VOL_LIST = 6
 PAGE_ORG_DASH = 7
-PAGE_ORG_BROWSE = 8
 
 # Nav modes
 NAV_GUEST, NAV_VOLUNTEER, NAV_ORG = "guest", "volunteer", "org"
 
-LISTING_AFTER_HOME_TAB = 2
 
+# ── Grouped navigation specs (≤ 5 groups per session) ─────────────────
+# Each group is a dropdown menu; items dispatch through _dispatch_nav.
+# Action names understood by _dispatch_nav:
+#   vol_tab           -> show volunteer tab (arg = tab index)
+#   vol_list          -> show volunteer listing page
+#   vol_match         -> show Volunteer Match page
+#   org_nav           -> show org nav tab (arg = nav index in TAB_LABELS)
+#   show_faq          -> FAQ page
+#   open_export       -> export dialog
+#   handle_logout     -> volunteer logout
+#   handle_org_logout -> org logout
+#   toggle_theme      -> dark / light switch
+#   show_login        -> login page
+#   show_vol_register -> volunteer registration
+#   show_org_register -> organization registration
 
-# ── Grouped navigation specs ──────────────────────────────────────────
 VOLUNTEER_NAV_GROUPS = [
     ("Home",        [("Dashboard", "vol_tab", 0),
                      ("Notifications", "vol_tab", 4)]),
     ("Discover",    [("Browse Events", "vol_list", None),
-                     ("Browse Organizations", "org_browse", None),
                      ("Volunteer Match", "vol_match", None),
                      ("Bookmarks", "vol_tab", 7)]),
     ("My Activity", [("Calendar", "vol_tab", 1),
@@ -76,8 +95,7 @@ ORG_NAV_GROUPS = [
 ]
 
 GUEST_NAV_GROUPS = [
-    ("Discover",   [("Browse Events", "vol_list", None),
-                    ("Browse Organizations", "org_browse", None),
+    ("Discover",   [("Browse Volunteer Events", "vol_list", None),
                     ("Volunteer Match", "vol_match", None)]),
     ("Learn",      [("FAQ", "show_faq", None)]),
     ("Account",    [("Login", "show_login", None),
@@ -147,11 +165,16 @@ class Landing(QMainWindow):
         layout.addWidget(self.pageStack, 1)
 
     def _build_nav(self):
+        """
+        Top bar: logo on the left, grouped nav in the middle, theme
+        toggle on the right. The old Register / Login buttons live
+        inside the Account group so the bar stays compact.
+        """
         nav = QWidget()
         nav.setObjectName(theme.navBar)
         h = QHBoxLayout(nav)
-        h.setContentsMargins(20, 10, 20, 10)
-        h.setSpacing(8)
+        h.setContentsMargins(36, 18, 36, 18)
+        h.setSpacing(12)
 
         self.nav_logo = QLabel()
         self.nav_logo.setObjectName(theme.navLogo)
@@ -168,6 +191,7 @@ class Landing(QMainWindow):
         self.btnThemeToggle = QPushButton(
             "🌙" if not self.is_dark_mode else "☀"
         )
+        self.btnThemeToggle.setObjectName(theme.NAV_GROUP_BTN)
         self.btnThemeToggle.setToolTip("Toggle dark / light mode")
         self.btnThemeToggle.setCursor(
             QCursor(Qt.CursorShape.PointingHandCursor)
@@ -250,13 +274,6 @@ class Landing(QMainWindow):
             )
         self.pageStack.addWidget(self.orgDashboard)
 
-        # 8 - Organization browse (guest-accessible)
-        self.orgBrowsePage = OrgBrowsePage(
-            db=self.db, on_back_click=self.show_home_page
-        )
-        self.orgBrowsePage.loginRequested.connect(self.show_login_page)
-        self.pageStack.addWidget(self.orgBrowsePage)
-
     def _build_guest_home(self):
         page = QWidget()
         outer = QVBoxLayout(page)
@@ -277,6 +294,7 @@ class Landing(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Mission-style hero
         self.hero_widget = self._build_hero()
         layout.addWidget(self.hero_widget, 0)
 
@@ -310,14 +328,18 @@ class Landing(QMainWindow):
         return page
 
     def _build_hero(self):
+        """Mission-style hero: layered image left, mission right,
+        Learn More button."""
         hero = HeroSection()
-        hero.learnMoreRequested.connect(
-            self.show_volunteer_listing_page
-        )
+        hero.learnMoreRequested.connect(self.show_volunteer_listing_page)
         return hero
 
     # ── Session-aware nav bar (grouped) ───────────────────────────────
     def _set_nav_mode(self, mode):
+        """
+        Rebuild the top nav. Every session gets at most 5 groups, each
+        a dropdown. Only the items inside change per session.
+        """
         self.nav_mode = mode
 
         while self.navTabsLayout.count():
@@ -349,14 +371,13 @@ class Landing(QMainWindow):
             self.navTabsLayout.addWidget(btn)
 
     def _dispatch_nav(self, action, arg):
+        """Route a nav-group click to the right page or callback."""
         if action == "vol_tab":
             self.show_volunteer_tab(arg)
         elif action == "vol_list":
             self.show_volunteer_listing_page()
         elif action == "vol_match":
             self.show_volunteer_match_page()
-        elif action == "org_browse":
-            self.show_org_browse_page()
         elif action == "org_nav":
             self._show_org_nav_tab(arg)
         elif action == "show_faq":
@@ -410,12 +431,16 @@ class Landing(QMainWindow):
         self.volunteerHomePage.show_tab(idx)
 
     def show_org_tab(self, idx):
+        """Show a stack page directly on the org dashboard."""
         self._goto(self.orgDashboard)
         show = getattr(self.orgDashboard, "show_tab", None)
         if callable(show):
             show(idx)
 
     def _show_org_nav_tab(self, nav_idx):
+        """Called by the org nav buttons. nav_idx is a position in
+        OrgDashboard.TAB_LABELS, translated to a stack index by the
+        dashboard itself (the form page has no nav button)."""
         self._goto(self.orgDashboard)
         fn = getattr(self.orgDashboard, "show_nav_tab", None)
         if callable(fn):
@@ -426,20 +451,11 @@ class Landing(QMainWindow):
                 show(nav_idx)
 
     def show_volunteer_listing_page(self, keyword=None, filters=None):
-        self.volunteerListingPage.set_current_volunteer(
-            self.current_user["userID"] if self.current_user else None
-        )
         if keyword:
             self.volunteerListingPage.set_search_text(keyword)
         if filters:
             self.volunteerListingPage.apply_external_filters(filters)
         self._goto(self.volunteerListingPage)
-
-    def show_org_browse_page(self):
-        self.orgBrowsePage.set_current_volunteer(
-            self.current_user["userID"] if self.current_user else None
-        )
-        self._goto(self.orgBrowsePage)
 
     def show_volunteer_register_page(self):
         self._goto(self.volunteerRegisterPage)
@@ -498,10 +514,7 @@ class Landing(QMainWindow):
             self.current_org = None
             self._set_nav_mode(NAV_VOLUNTEER)
             self.volunteerHomePage.set_user_data(user)
-            self.volunteerListingPage.set_current_volunteer(
-                user["userID"]
-            )
-            self.orgBrowsePage.set_current_volunteer(user["userID"])
+            self.volunteerListingPage.set_current_volunteer(user["userID"])
             self._refresh_home_carousels()
             self._goto(self.volunteerHomePage)
         else:
@@ -515,7 +528,6 @@ class Landing(QMainWindow):
     def handle_logout(self):
         self.current_user = None
         self.volunteerListingPage.set_current_volunteer(None)
-        self.orgBrowsePage.set_current_volunteer(None)
         self._set_nav_mode(NAV_GUEST)
         self._refresh_home_carousels()
         self._goto(self.guestHomePage)
@@ -533,6 +545,10 @@ class Landing(QMainWindow):
         self.volunteerHomePage.show_my_events()
 
     def _handle_home_rsvp(self, opportunity_id):
+        """RSVP from the guest-home carousels. The guest home is only
+        shown when no user is logged in, so this almost always lands on
+        the login prompt — but the logged-in branch is here for
+        completeness."""
         if not self.current_user:
             QMessageBox.information(
                 self, "Login required",
@@ -573,6 +589,7 @@ class Landing(QMainWindow):
             QMessageBox.warning(self, "Error", "Could not complete RSVP.")
 
     def _open_event_details(self, card):
+        """Open the same EventDetailsDialog the listing page uses."""
         from Events.eventDetailsDialog import EventDetailsDialog
         EventDetailsDialog(card, self).exec()
 
@@ -591,6 +608,8 @@ class Landing(QMainWindow):
 
     # ── Search ────────────────────────────────────────────────────────
     def handle_search(self, filters: dict):
+        """SearchBar emits a full filter dict; forward it to the
+        listing page's FilterBar so its widgets reflect the query."""
         if not filters:
             return
         self.show_volunteer_listing_page(filters=filters)
@@ -615,9 +634,10 @@ class Landing(QMainWindow):
         path = theme.asset(filename)
 
         smooth = Qt.TransformationMode.SmoothTransformation
-        nav_pixmap = QPixmap(path).scaledToHeight(32, smooth)
+        nav_pixmap = QPixmap(path).scaledToHeight(46, smooth)
         self.nav_logo.setPixmap(nav_pixmap)
 
+        # Keep the hero wordmark in sync with the theme.
         if (hasattr(self, "hero_widget")
                 and hasattr(self.hero_widget, "set_theme")):
             self.hero_widget.set_theme(self.is_dark_mode)

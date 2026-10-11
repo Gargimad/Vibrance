@@ -2359,7 +2359,148 @@ class Database:
             self.migrate()
         finally:
             source.close()
+        # ── Org-side volunteer recommendations ────────────────────────────
+    def getRecommendedVolunteersForOpportunity(self, opportunityID,
+                                               limit=8):
+        """
+        Rank volunteers for a single opportunity using three signals:
+          · cluster overlap with the volunteer's match profile (weight 3)
+          · same Georgia city as the event (weight 2)
+          · already signed up for this org's other events (weight 1)
+        Excludes anyone already signed up for this opportunity and
+        anyone this org has banned. Returns a list of dicts.
+        """
+        # 1. What clusters is this opportunity tagged with?
+        opp_clusters = set(self.getOpportunityClusters(opportunityID) or [])
+        if not opp_clusters:
+            return []
 
+        # 2. Event city + org id for the scoring.
+        self.cursor.execute(
+            "SELECT orgID, city FROM opportunities "
+            "WHERE opportunityID = ?",
+            (opportunityID,),
+        )
+        row = self.cursor.fetchone()
+        if not row:
+            return []
+        orgID = row["orgID"]
+        event_city = (row["city"] or "").strip()
+
+        # 3. Pull every volunteer + their match profile + ban status
+        #    + whether they've already signed up for this event.
+        self.cursor.execute("""
+            SELECT u.userID, u.email,
+                   vp.first_name, vp.last_name, vp.city, vp.state,
+                   vp.high_school, vp.skills,
+                   vm.cluster1, vm.cluster2, vm.cluster3,
+                   COALESCE(f.banned, 0) AS banned,
+                   (SELECT 1 FROM event_signups s
+                    WHERE s.userID = u.userID
+                      AND s.opportunityID = ?
+                      AND s.status = 'registered') AS already_signed,
+                   (SELECT COUNT(*) FROM event_signups s
+                    JOIN opportunities o2
+                        ON o2.opportunityID = s.opportunityID
+                    WHERE s.userID = u.userID
+                      AND o2.orgID = ?
+                      AND s.status = 'registered') AS past_with_org
+            FROM users u
+            LEFT JOIN volunteer_profiles vp ON vp.userID = u.userID
+            LEFT JOIN volunteer_match vm ON vm.userID = u.userID
+            LEFT JOIN org_volunteer_flags f
+                ON f.orgID = ? AND f.userID = u.userID
+            WHERE u.role = 'volunteer'
+        """, (opportunityID, orgID, orgID))
+
+        scored = []
+        for r in self.cursor.fetchall():
+            if r["banned"] or r["already_signed"]:
+                continue
+
+            v_clusters = {
+                r["cluster1"] or "", r["cluster2"] or "",
+                r["cluster3"] or "",
+            } - {""}
+            overlap = len(v_clusters & opp_clusters)
+            if overlap == 0 and not r["past_with_org"]:
+                continue
+
+            score = overlap * 3
+            if event_city and (r["city"] or "").lower() == \
+                    event_city.lower():
+                score += 2
+            if r["past_with_org"]:
+                score += 1
+
+            scored.append((score, dict(r),
+                           sorted(v_clusters & opp_clusters)))
+
+        scored.sort(key=lambda t: (-t[0],
+                                   (t[1].get("last_name") or "").lower()))
+        return [
+            {"volunteer": v, "score": s, "shared_clusters": c}
+            for s, v, c in scored[:limit]
+        ]
+
+    def notifyVolunteersAboutOpportunity(self, opportunityID):
+        """
+        Create an in-app notification for every volunteer whose match
+        profile overlaps with the opportunity's clusters, or — if the
+        opportunity has no clusters — for every volunteer who has
+        joined this org.
+        Respects the org's banned list.
+        """
+        self.cursor.execute(
+            "SELECT orgID, title FROM opportunities "
+            "WHERE opportunityID = ?",
+            (opportunityID,),
+        )
+        row = self.cursor.fetchone()
+        if not row:
+            return 0
+        orgID = row["orgID"]
+        title = row["title"] or "a new event"
+
+        clusters = set(
+            self.getOpportunityClusters(opportunityID) or []
+        )
+
+        if clusters:
+            placeholders = ", ".join("?" for _ in clusters)
+            self.cursor.execute(f"""
+                SELECT u.userID
+                FROM users u
+                JOIN volunteer_match vm ON vm.userID = u.userID
+                LEFT JOIN org_volunteer_flags f
+                    ON f.orgID = ? AND f.userID = u.userID
+                WHERE u.role = 'volunteer'
+                  AND COALESCE(f.banned, 0) = 0
+                  AND (
+                      vm.cluster1 IN ({placeholders}) OR
+                      vm.cluster2 IN ({placeholders}) OR
+                      vm.cluster3 IN ({placeholders})
+                  )
+            """, (orgID, *clusters, *clusters, *clusters))
+        else:
+            self.cursor.execute("""
+                SELECT DISTINCT m.userID
+                FROM org_members m
+                LEFT JOIN org_volunteer_flags f
+                    ON f.orgID = m.orgID AND f.userID = m.userID
+                WHERE m.orgID = ?
+                  AND COALESCE(f.banned, 0) = 0
+            """, (orgID,))
+
+        recipients = [r["userID"] for r in self.cursor.fetchall()]
+        for uid in recipients:
+            self.addNotification(
+                uid,
+                f"New opportunity from a cause you follow: {title}",
+                "opportunity_match",
+                opportunityID,
+            )
+        return len(recipients)
     # ── Shutdown ──────────────────────────────────────────────────────
     def close(self):
         try:
